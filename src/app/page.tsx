@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { StudentForm } from '@/components/forms/StudentForm';
+import { Navigation } from '@/components/ui/Navigation';
 import { submitStudentClearance } from '@/services/firebase';
 import { StudentFormData } from '@/types';
 
@@ -79,8 +80,8 @@ export default function Home() {
 
   if (submissionResult?.error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 sm:p-6">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-6 sm:p-8 text-center">
           <div className="text-6xl mb-4">❌</div>
           <h1 className="text-2xl font-bold text-foreground mb-4">
             Submission Failed
@@ -99,34 +100,9 @@ export default function Home() {
     );
   }
 
-  return (
+    return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-xl font-semibold text-gray-900">
-                Student Clearance System
-              </h1>
-              <span className="px-2 py-1 bg-primary text-white text-xs font-medium rounded">
-                New Submission
-              </span>
-            </div>
-            <div className="flex items-center space-x-4">
-              <a
-                href="/track"
-                className="text-foreground hover:text-gray-900 text-lg font-medium underline hover:font-bold"
-              >
-                Track Submission
-              </a>
- 
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
+      <Navigation currentPage="home" showAdminLink={false} />
       <main>
         <StudentForm onSubmit={handleSubmit} isSubmitting={isSubmitting} />
       </main>

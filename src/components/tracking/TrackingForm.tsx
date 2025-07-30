@@ -42,8 +42,8 @@ export function TrackingForm({ onTrack, isLoading, error }: TrackingFormProps) {
   };
 
   return (
-    <div className="max-w-md mx-auto">
-      <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="max-w-md mx-auto px-4 sm:px-0">
+      <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
         <div className="text-center mb-6">
           <div className="text-4xl mb-4">🔍</div>
           <h3 className="text-lg font-semibold text-gray-900 mb-2">

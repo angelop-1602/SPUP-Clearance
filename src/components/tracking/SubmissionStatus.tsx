@@ -55,7 +55,7 @@ export function SubmissionStatus({
   const statusInfo = getStatusMessage();
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto px-4 sm:px-0">
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
         {/* Status Header */}
         <div className="bg-gradient-to-r from-primary-500 to-primary-600 px-6 py-8 text-white text-center">
@@ -73,8 +73,8 @@ export function SubmissionStatus({
         </div>
 
         {/* Submission Details */}
-        <div className="p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="p-4 sm:p-6 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-4">
               <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">
                 Submission Information
@@ -175,9 +175,9 @@ export function SubmissionStatus({
                 <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2 mb-3">
                   Group Members
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {submission.groupMembers.map((member, index) => (
-                    <div key={index} className="bg-gray-50 p-3 rounded-md">
+                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                 {submission.groupMembers.map((member, index) => (
+                   <div key={index} className="bg-gray-50 p-3 rounded-md">
                       <p className="text-sm font-medium text-gray-900">
                         {member.name}
                       </p>

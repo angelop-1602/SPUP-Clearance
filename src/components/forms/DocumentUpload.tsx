@@ -109,7 +109,7 @@ export function DocumentUpload({
 
       <div
         className={`
-          relative border-2 border-dashed rounded-lg p-6 text-center
+          relative border-2 border-dashed rounded-lg p-4 sm:p-6 text-center
           transition-colors duration-200
           ${
             dragActive
@@ -167,10 +167,9 @@ export function DocumentUpload({
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="text-gray-400 flex justify-center items-center">
-                             <svg
-                 width="50px"
-                 height="50px"
+                         <div className="text-gray-400 flex justify-center items-center">
+               <svg
+                 className="w-10 h-10 sm:w-12 sm:h-12"
                  viewBox="0 0 24 24"
                  fill="none"
                  xmlns="http://www.w3.org/2000/svg"

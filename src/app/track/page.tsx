@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState } from 'react';
-import Link from 'next/link';
 import { TrackingForm } from '@/components/tracking/TrackingForm';
 import { SubmissionStatus } from '@/components/tracking/SubmissionStatus';
+import { Navigation } from '@/components/ui/Navigation';
 import { getSubmissionById } from '@/services/firebase';
 import { Student } from '@/types';
 
@@ -38,32 +38,7 @@ export default function TrackPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-xl font-semibold text-gray-900">
-                Student Clearance System
-              </h1>
-              <span className="px-2 py-1 bg-primary text-white text-xs font-medium rounded">
-                Track Submission
-              </span>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Link
-                href="/"
-                className="text-foreground hover:text-gray-900 text-lg font-medium underline hover:font-bold"
-              >
-                New Submission
-              </Link>
-
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
+      <Navigation currentPage="track" showAdminLink={false} />
       <main className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-4">

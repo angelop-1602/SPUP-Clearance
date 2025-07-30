@@ -125,8 +125,8 @@ export function AdminTable({
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
+      {/* Table - Mobile Card View for Small Screens */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -205,6 +205,35 @@ export function AdminTable({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="md:hidden divide-y divide-gray-200">
+        {submissions.map((submission: Student) => (
+          <div key={submission.id} className="p-4 hover:bg-gray-50">
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <h3 className="font-medium text-gray-900 text-sm">{submission.name}</h3>
+                <p className="text-xs text-gray-500">{submission.studentId}</p>
+              </div>
+              <StatusBadge status={submission.status} />
+            </div>
+            
+            <div className="space-y-1 text-xs text-gray-600 mb-3">
+              <p><span className="font-medium">Course:</span> {submission.course}</p>
+              <p><span className="font-medium">Research:</span> {submission.researchTitle}</p>
+              <p><span className="font-medium">Level:</span> {submission.level}</p>
+              <p><span className="font-medium">Submitted:</span> {submission.submittedAt.toLocaleDateString()}</p>
+            </div>
+            
+            <button
+              onClick={() => onViewSubmission(submission)}
+              className="w-full bg-primary-600 hover:bg-primary-700 text-white text-sm py-2 px-3 rounded-md transition-colors"
+            >
+              View Details
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );
