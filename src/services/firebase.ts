@@ -13,7 +13,8 @@ import {
 import { 
   ref, 
   uploadBytes, 
-  getDownloadURL 
+  getDownloadURL,
+  deleteObject 
 } from 'firebase/storage';
 import { 
   signInWithEmailAndPassword, 
@@ -267,4 +268,109 @@ export function onAuthStateChange(callback: (user: User | null) => void) {
  */
 export function getCurrentUser(): User | null {
   return auth.currentUser;
+}
+
+/**
+ * Mark submission as exported and optionally delete files from storage
+ */
+export async function markSubmissionAsExported(
+  submissionId: string, 
+  deleteFromStorage: boolean = true
+): Promise<void> {
+  try {
+    const submissionRef = doc(db, 'submissions', submissionId);
+    
+    // Update submission metadata
+    await updateDoc(submissionRef, {
+      isExported: true,
+      exportedAt: Timestamp.now()
+    });
+
+    // Optionally delete file from Firebase Storage
+    if (deleteFromStorage) {
+      try {
+        const fileName = `${submissionId}.zip`;
+        const fileRef = ref(storage, `submissions/${fileName}`);
+        await deleteObject(fileRef);
+        console.log(`Deleted file: ${fileName}`);
+      } catch (error) {
+        console.warn(`Failed to delete file for ${submissionId}:`, error);
+        // Don't throw error if file deletion fails - metadata is still updated
+      }
+    }
+  } catch (error) {
+    console.error('Error marking submission as exported:', error);
+    throw new Error('Failed to mark submission as exported');
+  }
+}
+
+/**
+ * Bulk mark submissions as exported
+ */
+export async function bulkMarkAsExported(
+  submissionIds: string[], 
+  deleteFromStorage: boolean = true
+): Promise<{ success: string[], failed: string[] }> {
+  const results: { success: string[], failed: string[] } = { success: [], failed: [] };
+  
+  for (const id of submissionIds) {
+    try {
+      await markSubmissionAsExported(id, deleteFromStorage);
+      (results.success as string[]).push(id);
+    } catch (error) {
+      console.error(`Failed to mark ${id} as exported:`, error);
+      (results.failed as string[]).push(id);
+    }
+  }
+  
+  return results;
+}
+
+/**
+ * Get submissions ready for export (cleared but not exported)
+ */
+export async function getSubmissionsForExport(): Promise<Student[]> {
+  try {
+    // Simple query without orderBy to avoid composite index requirement
+    const q = query(
+      collection(db, 'submissions'),
+      where('status', '==', 'Cleared')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const submissions: Student[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      
+      // Only include submissions that haven't been exported
+      if (!data.isExported) {
+        submissions.push({
+          id: doc.id,
+          level: data.level,
+          name: data.name,
+          email: data.email,
+          studentId: data.studentId,
+          adviser: data.adviser,
+          course: data.course,
+          researchTitle: data.researchTitle,
+          researchType: data.researchType,
+          groupMembers: data.groupMembers,
+          zipFile: data.zipFile,
+          status: data.status,
+          submittedAt: data.submittedAt.toDate(),
+          isExported: data.isExported || false,
+          exportedAt: data.exportedAt?.toDate()
+        });
+      }
+    });
+    
+    // Sort client-side by submission date (newest first)
+    submissions.sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+    
+    return submissions;
+  } catch (error) {
+    console.error('Error fetching submissions for export:', error);
+    throw new Error('Failed to fetch submissions for export');
+  }
 } 

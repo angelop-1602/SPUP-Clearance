@@ -220,6 +220,14 @@ createAdminUser('your_secure_password').then(() => console.log('Admin created!')
 - ✅ Reusable Navigation component with SPUP logo integration
 - ✅ Clean student UX with hidden admin login (accessible via direct URL)
 - ✅ Fixed logo deployment issues with optimized static export configuration
+- ✅ Integrated admin welcome banner into Navigation component for better organization
+- ✅ Export & Archive system for cost optimization
+  - Individual document downloads with custom naming format: (StudentName)SPUP_Clearance_2025_ABC123.zip
+  - Bulk export functionality with master ZIP file creation
+  - Firebase Storage cleanup to reduce costs while preserving metadata
+  - Export manifest generation for record keeping
+  - Admin export panel with selection interface
+  - Fully optimized Firestore queries to avoid ALL index requirements (simple equality filters with client-side sorting)
 
 ## 📁 PROJECT STRUCTURE
 
@@ -292,5 +300,75 @@ Students can now track their submission status using their ID:
   * Visual status indicators
   * Next steps guidance
   * Navigation to submit new requests
+
+### 📦 Export & Archive System
+
+Cost optimization feature for managing Firebase Storage:
+
+* **Purpose:** Export cleared submission files and delete from storage to save costs
+* **Functionality:**
+  * ✅ Bulk export of cleared submissions as ZIP files
+  * ✅ Individual submission download with custom naming: `(StudentName)SPUP_Clearance_YYYY_ABC123.zip`
+  * ✅ Master ZIP creation: `SPUP_Clearance_Export_YYYY-MM-DD_X_submissions.zip`
+  * ✅ Firebase Storage integration using SDK (CORS-free)
+  * ✅ Metadata retention in Firestore with `isExported` and `exportedAt` fields
+  * ✅ Automatic file deletion from storage after export
+  * ✅ **Visual indicators in admin table for exported submissions**
+
+### 🎨 Visual Export Indicators
+
+✅ **Added visual flags for exported submissions:**
+
+* **Desktop Table:** Green "Archived" badge with download icon next to status
+* **Mobile Cards:** Stacked layout with status and archive indicator
+* **Tooltip:** Shows export date on hover
+* **Styling:** Green background (`bg-green-100 text-green-800`) for clear distinction
+* **Icon:** Download arrow icon to represent archived/exported status
+
+### 🔧 CORS Issue Resolution
+
+✅ **Fixed Firebase Storage CORS blocking with native browser downloads:**
+
+**Problem:** Firebase Storage was blocking programmatic `fetch()` requests due to CORS policy, even with signed URLs.
+
+**Final Solution:** **Streamlined automatic individual downloads** with smart browser handling:
+* ✅ **Individual Downloads:** Each submission downloads separately with proper student names
+* ✅ **Student Name Format:** `(StudentName)SPUP_Clearance_YYYY_ABC123.zip`
+* ✅ **CORS Bypass:** Uses native browser download mechanism with signed Firebase URLs
+* ✅ **Smart Automation:** Automatic downloads with intelligent delays to prevent browser blocking
+* ✅ **User Confirmation:** Preview all files before download with user consent
+* ✅ **Progress Tracking:** Real-time progress display with current file being downloaded
+* ✅ **Staggered Timing:** 1s delay after first download, 2s between subsequent downloads
+* ✅ **Professional UX:** Single click initiates all downloads with clear feedback
+
+**Technical Implementation:**
+```typescript
+// Streamlined bulk download with automatic intervals
+export async function bulkExportSubmissions(submissions, options, onProgress) {
+  // 1. Prepare all signed URLs first
+  const downloadData = [];
+  for (const submission of submissions) {
+    const downloadURL = await getDownloadURL(fileRef);
+    const fileName = `(${sanitizedName})${submission.id}.zip`;
+    downloadData.push({ fileName, downloadURL });
+  }
+
+  // 2. Show preview and get user confirmation
+  const userConfirm = confirm(`Ready to download ${downloadData.length} files:\n\n• ${fileList}`);
+  
+  // 3. Auto-download with smart delays
+  for (let i = 0; i < downloadData.length; i++) {
+    const link = document.createElement('a');
+    link.href = downloadURL;
+    link.download = fileName;
+    link.click();
+    
+    onProgress(i + 1, total, fileName); // Update UI progress
+    await delay(i === 0 ? 1000 : 2000); // Smart staggering
+  }
+}
+```
+
+**Final Resolution:** Firebase Storage CORS is fundamentally incompatible with programmatic client-side downloads. The optimal solution is intelligent individual downloads with browser-native mechanisms, proper delays, and excellent UX.
 
 ---

@@ -4,6 +4,30 @@ import React, { useState } from 'react';
 import { Student, FilterOptions } from '@/types';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
+// Exported Flag Component
+function ExportedFlag({ isExported, exportedAt }: { isExported?: boolean; exportedAt?: Date }) {
+  if (!isExported) return null;
+  
+  const formatExportDate = (date: Date) => {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(date);
+  };
+
+  return (
+    <div 
+      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 ml-2"
+      title={`Exported on ${exportedAt ? formatExportDate(exportedAt) : 'Unknown date'}`}
+    >
+      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+      </svg>
+    </div>
+  );
+}
+
 interface AdminTableProps {
   submissions: Student[];
   onViewSubmission: (submission: Student) => void;
@@ -58,7 +82,7 @@ export function AdminTable({
       {/* Filters */}
       <div className="p-6 border-b border-gray-200">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          All Submissions ({submissions.length})
+          All Submissions 
         </h2>
         
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -160,6 +184,7 @@ export function AdminTable({
             ) : (
               submissions.map((submission) => (
                 <tr key={submission.id} className="hover:bg-gray-50">
+
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900">
@@ -187,7 +212,10 @@ export function AdminTable({
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <StatusBadge status={submission.status} />
+                    <div className="flex items-center">
+                      <StatusBadge status={submission.status} />
+                      <ExportedFlag isExported={submission.isExported} exportedAt={submission.exportedAt} />
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {formatDate(submission.submittedAt)}
@@ -216,7 +244,10 @@ export function AdminTable({
                 <h3 className="font-medium text-gray-900 text-sm">{submission.name}</h3>
                 <p className="text-xs text-gray-500">{submission.studentId}</p>
               </div>
-              <StatusBadge status={submission.status} />
+              <div className="flex flex-col items-end space-y-1">
+                <StatusBadge status={submission.status} />
+                <ExportedFlag isExported={submission.isExported} exportedAt={submission.exportedAt} />
+              </div>
             </div>
             
             <div className="space-y-1 text-xs text-gray-600 mb-3">

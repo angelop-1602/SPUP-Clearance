@@ -12,6 +12,8 @@ export interface Student {
   zipFile: string; // URL of ZIP file containing all documents
   status: "Submitted" | "Cleared";
   submittedAt: Date;
+  isExported?: boolean; // Flag to indicate if files have been exported and removed from storage
+  exportedAt?: Date; // When the files were exported
 }
 
 export interface GroupMember {

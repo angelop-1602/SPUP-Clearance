@@ -6,6 +6,7 @@ import { LoginForm } from '@/components/admin/LoginForm';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { AdminTable } from '@/components/admin/AdminTable';
 import { SubmissionCard } from '@/components/admin/SubmissionCard';
+import { ExportPanel } from '@/components/admin/ExportPanel';
 import { onAuthStateChange, getAllSubmissions } from '@/services/firebase';
 import { Student, FilterOptions } from '@/types';
 
@@ -17,6 +18,7 @@ export default function AdminPage() {
   const [selectedSubmission, setSelectedSubmission] = useState<Student | null>(null);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
   const [currentFilters, setCurrentFilters] = useState<FilterOptions>({});
+  const [showExportPanel, setShowExportPanel] = useState(false);
 
   // Monitor authentication state
   useEffect(() => {
@@ -96,16 +98,27 @@ export default function AdminPage() {
   return (
     <AdminLayout user={user} onLogout={handleLogout}>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Student Clearance Dashboard
-          </h1>
-          <button
-            onClick={() => loadSubmissions(currentFilters)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
-          >
-            Refresh
-          </button>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Student Clearance Dashboard
+            </h1>
+            <p className="text-gray-600 mt-1">Manage student clearance submissions</p>
+          </div>
+          <div className="mt-4 md:mt-0 flex space-x-3">
+            <button
+              onClick={() => setShowExportPanel(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
+            >
+              Export & Archive
+            </button>
+            <button
+              onClick={() => loadSubmissions(currentFilters)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Statistics Cards */}
@@ -154,6 +167,10 @@ export default function AdminPage() {
             onClose={handleCloseSubmission}
             onUpdate={handleSubmissionUpdate}
           />
+        )}
+
+        {showExportPanel && (
+          <ExportPanel onClose={() => setShowExportPanel(false)} />
         )}
       </div>
     </AdminLayout>

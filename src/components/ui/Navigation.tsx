@@ -3,13 +3,17 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { User } from 'firebase/auth';
 
 interface NavigationProps {
   currentPage?: 'home' | 'track' | 'admin';
   showAdminLink?: boolean;
+  // Admin-specific props
+  user?: User | null;
+  onLogout?: () => void;
 }
 
-export function Navigation({ currentPage = 'home', showAdminLink = true }: NavigationProps) {
+export function Navigation({ currentPage = 'home', showAdminLink = true, user, onLogout }: NavigationProps) {
   const getPageBadge = () => {
     switch (currentPage) {
       case 'home':
@@ -120,9 +124,29 @@ export function Navigation({ currentPage = 'home', showAdminLink = true }: Navig
           {/* Navigation Links */}
           <div className="flex items-center space-x-2 sm:space-x-4">
             {getNavigationLinks()}
+
+            {currentPage === 'admin' && user && (
+          <div className="px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-12">
+              <div className="text-sm ">
+                Welcome, <span className="font-medium">{user.email}</span>
+              </div>
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="bg-white/10 hover:bg-white/20 px-3 py-1 rounded-md text-sm font-medium transition-colors"
+                >
+                  Logout
+                </button>
+              )}
+            </div>
+          </div>
+      )}
           </div>
         </div>
       </div>
+
+      
     </header>
   );
 } 
