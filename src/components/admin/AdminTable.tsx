@@ -3,6 +3,18 @@
 import React, { useState } from 'react';
 import { Student, FilterOptions } from '@/types';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { EllipsisVertical, Eye, Download, CheckCircle, Edit } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { downloadWithConfirmation } from '@/services/exportService';
+import { markSubmissionAsExported, updateSubmissionStatus } from '@/services/firebase';
+import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
+import { EditSubmissionDialog } from '@/components/admin/EditSubmissionDialog';
+import { toast } from 'sonner';
 
 // Exported Flag Component
 function ExportedFlag({ isExported, exportedAt }: { isExported?: boolean; exportedAt?: Date }) {
@@ -33,13 +45,15 @@ interface AdminTableProps {
   onViewSubmission: (submission: Student) => void;
   onFiltersChange: (filters: FilterOptions) => void;
   isLoading?: boolean;
+  onSubmissionUpdate?: () => void;
 }
 
 export function AdminTable({ 
   submissions, 
   onViewSubmission, 
   onFiltersChange, 
-  isLoading = false 
+  isLoading = false,
+  onSubmissionUpdate
 }: AdminTableProps) {
   const [filters, setFilters] = useState<FilterOptions>({
     level: 'all',
@@ -47,6 +61,12 @@ export function AdminTable({
     course: '',
     searchTerm: '',
   });
+
+  // Dialog states
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [selectedSubmission, setSelectedSubmission] = useState<Student | null>(null);
 
   const handleFilterChange = (key: keyof FilterOptions, value: string) => {
     const newFilters = { ...filters, [key]: value };
@@ -67,6 +87,70 @@ export function AdminTable({
   const uniqueCourses = Array.from(
     new Set(submissions.map(s => s.course).filter(Boolean))
   ).sort();
+
+  // Dialog handlers
+  const handleDownloadClick = async (submission: Student) => {
+    if (submission.isExported) {
+      toast.info('This submission was already downloaded and removed from storage.');
+      return;
+    }
+
+    try {
+      // Step 1: Download the file immediately
+      await downloadWithConfirmation(submission);
+      toast.success(`Download started for ${submission.name}'s submission. Check your Downloads folder.`);
+      
+      // Step 2: Show confirmation dialog for storage deletion
+      setSelectedSubmission(submission);
+      setDownloadDialogOpen(true);
+      
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error('Failed to download file. Please try again.');
+    }
+  };
+
+  const handleDownloadConfirm = async () => {
+    if (!selectedSubmission) return;
+    
+    try {
+      // Only delete from storage - download already happened
+      await markSubmissionAsExported(selectedSubmission.id, true);
+      toast.success(`File removed from storage to save costs.`);
+      if (onSubmissionUpdate) onSubmissionUpdate();
+      
+    } catch (error) {
+      console.error('Storage deletion error:', error);
+      toast.error('Failed to remove file from storage. Please try again later.');
+    }
+  };
+
+  const handleClearClick = (submission: Student) => {
+    if (submission.status === 'Cleared') {
+      toast.info('This submission is already marked as cleared.');
+      return;
+    }
+    setSelectedSubmission(submission);
+    setClearDialogOpen(true);
+  };
+
+  const handleClearConfirm = async () => {
+    if (!selectedSubmission) return;
+    
+    try {
+      await updateSubmissionStatus(selectedSubmission.id, 'Cleared');
+      toast.success(`Marked ${selectedSubmission.name}'s submission as cleared.`);
+      if (onSubmissionUpdate) onSubmissionUpdate();
+    } catch (error) {
+      console.error('Clear error:', error);
+      toast.error('Failed to mark submission as cleared.');
+    }
+  };
+
+  const handleEditClick = (submission: Student) => {
+    setSelectedSubmission(submission);
+    setEditDialogOpen(true);
+  };
 
   if (isLoading) {
     return (
@@ -221,12 +305,48 @@ export function AdminTable({
                     {formatDate(submission.submittedAt)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => onViewSubmission(submission)}
-                      className="text-blue-600 hover:text-blue-900"
-                    >
-                      View Details
-                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="p-2 hover:bg-gray-100 rounded-md transition-colors">
+                            <EllipsisVertical className="h-4 w-4 text-gray-600" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => onViewSubmission(submission)}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          <span>View</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEditClick(submission)}>
+                          <Edit className="h-4 w-4 mr-2" />
+                          <span>Edit</span>
+                        </DropdownMenuItem>
+                        {submission.status !== 'Cleared' && (
+                          <DropdownMenuItem onClick={() => handleClearClick(submission)}>
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            <span>Mark as Cleared</span>
+                          </DropdownMenuItem>
+                        )}
+                        {submission.isExported && submission.exportLink ? (
+                          <DropdownMenuItem asChild>
+                            <a href={submission.exportLink} target="_blank" rel="noopener noreferrer" className="flex items-center">
+                              <Download className="h-4 w-4 mr-2" />
+                              <span>Open Export Link</span>
+                            </a>
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem 
+                            onClick={() => handleDownloadClick(submission)}
+                            disabled={submission.isExported}
+                            className={submission.isExported ? "opacity-50 cursor-not-allowed" : ""}
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            <span className={submission.isExported ? "text-gray-400" : ""}>
+                              {submission.isExported ? "Already Downloaded" : "Download"}
+                            </span>
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               ))
@@ -257,15 +377,79 @@ export function AdminTable({
               <p><span className="font-medium">Submitted:</span> {submission.submittedAt.toLocaleDateString()}</p>
             </div>
             
-            <button
-              onClick={() => onViewSubmission(submission)}
-              className="w-full bg-primary-600 hover:bg-primary-700 text-white text-sm py-2 px-3 rounded-md transition-colors"
-            >
-              View Details
-            </button>
+            <div className="flex flex-col space-y-2">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => onViewSubmission(submission)}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm py-2 px-3 rounded-md transition-colors"
+                >
+                  View Details
+                </button>
+                <button
+                  onClick={() => handleEditClick(submission)}
+                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white text-sm py-2 px-3 rounded-md transition-colors"
+                >
+                  Edit
+                </button>
+              </div>
+              <div className="flex space-x-2">
+                {submission.status !== 'Cleared' && (
+                  <button
+                    onClick={() => handleClearClick(submission)}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm py-2 px-3 rounded-md transition-colors"
+                  >
+                    Mark as Cleared
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDownloadClick(submission)}
+                  disabled={submission.isExported}
+                  className={`flex-1 text-sm py-2 px-3 rounded-md transition-colors ${
+                    submission.isExported 
+                      ? "bg-gray-400 cursor-not-allowed text-white" 
+                      : "bg-orange-600 hover:bg-orange-700 text-white"
+                  }`}
+                >
+                  {submission.isExported ? "Already Downloaded" : "Download"}
+                </button>
+              </div>
+            </div>
           </div>
         ))}
       </div>
+
+      {/* Confirmation Dialogs */}
+      <ConfirmationDialog
+        isOpen={downloadDialogOpen}
+        onOpenChange={setDownloadDialogOpen}
+        title="Confirm Storage Deletion"
+        description={`The file for ${selectedSubmission?.name}'s submission has been downloaded to your computer.\n\nDo you want to remove it from Firebase Storage to save costs?\n\n✅ File downloaded to your computer\n🗑️ Remove from cloud storage (saves money)\n\nWARNING: Once deleted from storage, the file cannot be downloaded again from the admin panel.`}
+        confirmText="Remove from Storage"
+        cancelText="Keep in Storage"
+        onConfirm={handleDownloadConfirm}
+        variant="destructive"
+        countdown={5}
+      />
+
+      <ConfirmationDialog
+        isOpen={clearDialogOpen}
+        onOpenChange={setClearDialogOpen}
+        title="Mark as Cleared"
+        description={`Are you sure you want to mark ${selectedSubmission?.name}'s submission as cleared?\n\nThis action will change the status from "Submitted" to "Cleared".`}
+        confirmText="Mark as Cleared"
+        cancelText="Cancel"
+        onConfirm={handleClearConfirm}
+      />
+
+      {/* Edit Dialog */}
+      <EditSubmissionDialog
+        isOpen={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        submission={selectedSubmission}
+        onUpdate={() => {
+          if (onSubmissionUpdate) onSubmissionUpdate();
+        }}
+      />
     </div>
   );
 } 

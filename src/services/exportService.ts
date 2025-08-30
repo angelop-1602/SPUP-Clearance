@@ -1,8 +1,6 @@
 "use client";
 
 import { Student } from '@/types';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
 import { storage } from '@/lib/firebase';
 import { ref, getDownloadURL } from 'firebase/storage';
 
@@ -10,16 +8,9 @@ import { ref, getDownloadURL } from 'firebase/storage';
  * Export Service for downloading and managing cleared submissions
  */
 
-export interface ExportOptions {
-  includePending?: boolean;
-  dateRange?: {
-    from: Date;
-    to: Date;
-  };
-}
-
 /**
- * Downloads a single submission file using native browser download (bypasses CORS)
+ * Downloads a single submission file with improved error handling and debugging
+ * This function only initiates the download - it doesn't guarantee completion
  */
 export async function downloadSubmissionFile(submission: Student): Promise<void> {
   try {
@@ -27,147 +18,99 @@ export async function downloadSubmissionFile(submission: Student): Promise<void>
       throw new Error('No file available for this submission');
     }
 
-    // Get signed download URL from Firebase Storage
-    const storageFileName = `${submission.id}.zip`;
+    console.log('Starting download for submission:', submission.id);
+    console.log('Original zipFile URL:', submission.zipFile);
+
+    // Get signed download URL from Firebase Storage using new filename format
+    const sanitizedName = submission.name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+    const storageFileName = `${sanitizedName}_${submission.id}.zip`;
+    console.log('Looking for file:', storageFileName);
+    
     const fileRef = ref(storage, `submissions/${storageFileName}`);
-    const downloadURL = await getDownloadURL(fileRef);
     
-    // Use submission ID as filename
-    const customFileName = `${submission.id}.zip`;
-    
-    // Create temporary download link and trigger native browser download
-    const link = document.createElement('a');
-    link.href = downloadURL;
-    link.download = customFileName;
-    link.style.display = 'none';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Verify file exists in storage before attempting download
+    try {
+      const downloadURL = await getDownloadURL(fileRef);
+      console.log('Got download URL:', downloadURL);
+      
+      // Use student name + submission ID as filename for better identification
+      const customFileName = `${sanitizedName}_${submission.id}.zip`;
+      console.log('Custom filename:', customFileName);
+      
+      // Create temporary download link and trigger native browser download
+      const link = document.createElement('a');
+      link.href = downloadURL;
+      link.download = customFileName;
+      link.style.display = 'none';
+      link.target = '_blank'; // Add target blank for better compatibility
+      
+      document.body.appendChild(link);
+      console.log('Triggering download...');
+      
+      // Try multiple methods for better browser compatibility
+      try {
+        // Method 1: Standard click
+        link.click();
+        console.log('Standard click executed');
+      } catch (clickError) {
+        console.warn('Standard click failed:', clickError);
+        
+        try {
+          // Method 2: MouseEvent dispatch
+          const clickEvent = new MouseEvent('click', {
+            view: window,
+            bubbles: true,
+            cancelable: false
+          });
+          link.dispatchEvent(clickEvent);
+          console.log('MouseEvent dispatch executed');
+        } catch (dispatchError) {
+          console.warn('MouseEvent dispatch failed:', dispatchError);
+          
+          // Method 3: Fallback to window.open
+          console.log('Falling back to window.open');
+          window.open(downloadURL, '_blank');
+        }
+      }
+      
+      // Clean up
+      setTimeout(() => {
+        if (document.body.contains(link)) {
+          document.body.removeChild(link);
+        }
+      }, 100);
+      
+      console.log('Download initiated successfully');
+
+      // Note: This only initiates the download, doesn't guarantee completion
+      // The caller should handle storage cleanup with user confirmation
+    } catch (storageError) {
+      console.error('Storage error:', storageError);
+      throw new Error(`File not found in storage: ${storageError}`);
+    }
   } catch (error) {
+    console.error('Download initiation failed:', error);
     throw error;
   }
 }
 
 /**
- * Streamlined bulk download - back to original working approach but with custom confirmation
+ * Downloads a file and returns a promise that resolves immediately
+ * The confirmation dialog is now handled by the UI components
  */
-export async function bulkExportSubmissions(
-  submissions: Student[], 
-  options: ExportOptions = {},
-  onProgress?: (current: number, total: number, fileName: string) => void,
-  showConfirmation?: (message: string, fileList: string[]) => Promise<boolean>
-): Promise<{ downloadedCount: number; totalCount: number }> {
+export async function downloadWithConfirmation(submission: Student): Promise<void> {
   try {
-    // Filter submissions based on options
-    let filteredSubmissions = submissions.filter(sub => sub.status === 'Cleared');
+    // Initiate the download
+    await downloadSubmissionFile(submission);
     
-    if (!options.includePending) {
-      filteredSubmissions = filteredSubmissions.filter(sub => !sub.isExported);
-    }
-
-    if (options.dateRange) {
-      filteredSubmissions = filteredSubmissions.filter(sub => {
-        const submittedDate = new Date(sub.submittedAt);
-        return submittedDate >= options.dateRange!.from && submittedDate <= options.dateRange!.to;
-      });
-    }
-
-    if (filteredSubmissions.length === 0) {
-      throw new Error('No submissions to export');
-    }
-
-    // Prepare all download URLs first
-    const downloadData: Array<{
-      fileName: string;
-      downloadURL: string;
-      submission: Student;
-    }> = [];
+    // Wait a moment for the download to start
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
-    for (let i = 0; i < filteredSubmissions.length; i++) {
-      const submission = filteredSubmissions[i];
-      try {
-        if (!submission.id) {
-          continue;
-        }
-        
-        // Get signed download URL from Firebase Storage
-        const storageFileName = `${submission.id}.zip`;
-        const fileRef = ref(storage, `submissions/${storageFileName}`);
-        const downloadURL = await getDownloadURL(fileRef);
-        
-        // Use submission ID as filename
-        const fileName = `${submission.id}.zip`;
-        
-        downloadData.push({ fileName, downloadURL, submission });
-        
-      } catch (error) {
-        // Silently skip failed preparations
-      }
-    }
-
-    if (downloadData.length === 0) {
-      throw new Error('No files could be prepared for download. Please check your connection.');
-    }
-
-    // Show confirmation if callback provided, otherwise proceed
-    if (showConfirmation) {
-      const fileNames = downloadData.map(d => d.fileName);
-      const userConfirmed = await showConfirmation(
-        `Ready to download ${downloadData.length} files:\n\nFiles will download automatically with smart delays to prevent browser blocking.`,
-        fileNames
-      );
-      
-      if (!userConfirmed) {
-        throw new Error('Download cancelled by user');
-      }
-    }
-
-    // Execute downloads immediately after confirmation
-    let successCount = 0;
-    for (let i = 0; i < downloadData.length; i++) {
-      const { fileName, downloadURL } = downloadData[i];
-      
-      try {
-        // Update progress
-        if (onProgress) {
-          onProgress(i + 1, downloadData.length, fileName);
-        }
-        
-        // Create and trigger download
-        const link = document.createElement('a');
-        link.href = downloadURL;
-        link.download = fileName;
-        link.target = '_blank';
-        link.style.display = 'none';
-        
-        document.body.appendChild(link);
-        link.click();
-        
-        // Clean up after delay
-        setTimeout(() => {
-          if (document.body.contains(link)) {
-            document.body.removeChild(link);
-          }
-        }, 1000);
-        
-        successCount++;
-        
-        // Staggered delays to prevent browser blocking
-        if (i < downloadData.length - 1) {
-          const delay = i === 0 ? 1000 : 2000; // Longer delay after first download
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-        
-      } catch (error) {
-        // Silently skip failed downloads
-      }
-    }
-    
-    return { downloadedCount: successCount, totalCount: downloadData.length };
-    
+    // Return successfully - confirmation is now handled by UI
   } catch (error) {
     throw error;
   }
 }
+
+
 

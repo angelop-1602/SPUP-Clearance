@@ -25,6 +25,8 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
     studentId: "",
     adviser: "",
     course: "",
+    graduationMonth: "",
+    graduationYear: "",
     researchTitle: "",
     researchType: "Thesis",
     groupMembers: [{ name: "", studentID: "" }],
@@ -40,7 +42,10 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
     {}
   );
 
-  const handleInputChange = (field: keyof StudentFormData, value: string | Level | ResearchType) => {
+  const handleInputChange = (
+    field: keyof StudentFormData,
+    value: string | Level | ResearchType
+  ) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
@@ -103,7 +108,6 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
       "approvalSheet",
       "fullPaper",
       "longAbstract",
-      "journalFormat",
     ] as const;
     requiredDocs.forEach((docType) => {
       if (!formData.documents[docType]) {
@@ -239,7 +243,29 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                     placeholder="Enter your student ID"
                   />
                 </div>
-
+                <div>
+                  <label
+                    htmlFor="course"
+                    className="block text-sm font-medium text-gray-700 mb-2"
+                  >
+                    Course *
+                  </label>
+                  <input
+                    id="course"
+                    type="text"
+                    required
+                    value={formData.course}
+                    onChange={(e) =>
+                      handleInputChange("course", e.target.value)
+                    }
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                      formData.course && formData.course.length < 2
+                        ? "border-red-500"
+                        : "border-gray-300"
+                    }`}
+                    placeholder="e.g., BSIT, BSCS, MIT, etc."
+                  />
+                </div>
                 <div>
                   <label
                     htmlFor="adviser"
@@ -264,35 +290,72 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                   />
                 </div>
 
-                <div>
-                  <label
-                    htmlFor="course"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Course *
-                  </label>
-                  <input
-                    id="course"
-                    type="text"
-                    required
-                    value={formData.course}
-                    onChange={(e) =>
-                      handleInputChange("course", e.target.value)
-                    }
-                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                      formData.course && formData.course.length < 2
-                        ? "border-red-500"
-                        : "border-gray-300"
-                    }`}
-                    placeholder="e.g., BSIT, BSCS, MIT, etc."
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Please enter your course abbreviation (e.g., BSIT, BSCS,
-                    MIT)
-                  </p>
+                
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      htmlFor="graduationMonth"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Graduation Month *
+                    </label>
+                    <select
+                      id="graduationMonth"
+                      required
+                      value={formData.graduationMonth}
+                      onChange={(e) =>
+                        handleInputChange("graduationMonth", e.target.value)
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      <option value="">Select Month</option>
+                      <option value="January">January</option>
+                      <option value="February">February</option>
+                      <option value="March">March</option>
+                      <option value="April">April</option>
+                      <option value="May">May</option>
+                      <option value="June">June</option>
+                      <option value="July">July</option>
+                      <option value="August">August</option>
+                      <option value="September">September</option>
+                      <option value="October">October</option>
+                      <option value="November">November</option>
+                      <option value="December">December</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="graduationYear"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Graduation Year *
+                    </label>
+                    <select
+                      id="graduationYear"
+                      required
+                      value={formData.graduationYear}
+                      onChange={(e) =>
+                        handleInputChange("graduationYear", e.target.value)
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      <option value="">Select Year</option>
+                      {Array.from({ length: 16 }, (_, i) => {
+                        const currentYear = new Date().getFullYear();
+                        const year = currentYear - 10 + i; // Start from 10 years ago
+                        return (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
                 </div>
 
-                <div>
+                <div className="col-span-2">
                   <label
                     htmlFor="researchTitle"
                     className="block text-sm font-medium text-gray-700 mb-2"
@@ -414,15 +477,14 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                 Required Documents
               </h2>
               <p className="text-sm text-gray-600">
-                Please upload all required documents. All files must be in the
-                specified format and under 10MB each.
+                Please upload all required documents. All file types are accepted.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <DocumentUpload
                   label="Approval Sheet"
-                  accept=".pdf"
-                  description="Upload the scanned approval sheet in PDF format."
+                  accept="*"
+                  description="Upload the scanned approval sheet in any format."
                   file={formData.documents.approvalSheet}
                   onFileChange={(file) =>
                     handleDocumentChange("approvalSheet", file)
@@ -432,8 +494,8 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
 
                 <DocumentUpload
                   label="Full Paper"
-                  accept=".docx"
-                  description="Upload the full paper in DOCX format. The ethics clearance must be included in the appendix."
+                  accept="*"
+                  description="Upload the full paper in any format. The ethics clearance must be included in the appendix."
                   file={formData.documents.fullPaper}
                   onFileChange={(file) =>
                     handleDocumentChange("fullPaper", file)
@@ -443,8 +505,8 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
 
                 <DocumentUpload
                   label="Long Abstract"
-                  accept=".docx"
-                  description="Upload the long abstract in DOCX format."
+                  accept="*"
+                  description="Upload the long abstract in any format."
                   file={formData.documents.longAbstract}
                   onFileChange={(file) =>
                     handleDocumentChange("longAbstract", file)
@@ -453,14 +515,15 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                 />
 
                 <DocumentUpload
-                  label="Journal Format"
-                  accept=".docx"
-                  description="Upload the journal in DOCX format."
+                  label="Journal Format (Optional)"
+                  accept="*"
+                  description="Upload the journal in any format. This field is optional."
                   file={formData.documents.journalFormat}
                   onFileChange={(file) =>
                     handleDocumentChange("journalFormat", file)
                   }
                   error={documentErrors.journalFormat}
+                  isRequired={false}
                 />
               </div>
             </div>

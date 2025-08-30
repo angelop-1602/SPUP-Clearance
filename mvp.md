@@ -35,29 +35,29 @@ Allow undergraduate and graduate students to submit their clearance details and 
 
 **📎 Document Uploads (Individual Files):**
 
-* **Approval Sheet** - `.pdf` format (Max 10MB)
-* **Full Paper** - `.docx` format (Max 10MB)
+* **Approval Sheet** - Any file format (No size limit)
+* **Full Paper** - Any file format (No size limit)
   * Ethics clearance should be included in the appendix
-* **Long Abstract** - `.docx` format (Max 10MB)  
-* **Journal Format** - `.docx` format (Max 10MB)
+* **Long Abstract** - Any file format (No size limit)  
+* **Journal Format** - Any file format (No size limit)
 
 #### ✅ Validation
 
 * Required fields must be filled
 * Each document must be:
-  * Correct format (PDF/DOCX)
-  * Max 10MB per file
+  * Any file format accepted
+  * No size limit restrictions
 
 #### 🔁 On Submit
 
 * Generate document ID: `SPUP_Clearance_2025_XXXXXX`
 * Store student data in Firestore under `submissions`
 * Create ZIP file containing all documents with standardized names:
-  * `approval_sheet.pdf`
-  * `full_paper.docx` 
-  * `long_abstract.docx`
-  * `journal_format.docx`
-* Upload ZIP file to Firebase Storage: `/submissions/SPUP_Clearance_2025_XXXXXX.zip`
+  * `approval_sheet.{original_extension}`
+  * `full_paper.{original_extension}` 
+  * `long_abstract.{original_extension}`
+  * `journal_format.{original_extension}`
+* Upload ZIP file to Firebase Storage: `/submissions/{StudentName}_SPUP_Clearance_2025_XXXXXX.zip`
 * Save ZIP download URL as `zipFile` in Firestore
 
 ---
@@ -167,6 +167,7 @@ Allow undergraduate and graduate students to submit their clearance details and 
 | 2    | ✅ Build Student Form + ZIP upload + Firestore        | Done |
 | 3    | ✅ Build Admin Login + Dashboard + View Submission    | Done |
 | 4    | ⚠️ Final polish, test validations, deploy to Firebase | In Progress |
+| 5    | ✅ Make Journal Format field not required              | Done |
 
 ## 🛠️ **SETUP INSTRUCTIONS**
 
@@ -221,13 +222,35 @@ createAdminUser('your_secure_password').then(() => console.log('Admin created!')
 - ✅ Clean student UX with hidden admin login (accessible via direct URL)
 - ✅ Fixed logo deployment issues with optimized static export configuration
 - ✅ Integrated admin welcome banner into Navigation component for better organization
-- ✅ Export & Archive system for cost optimization
-  - Individual document downloads with custom naming format: (StudentName)SPUP_Clearance_2025_ABC123.zip
-  - Bulk export functionality with master ZIP file creation
-  - Firebase Storage cleanup to reduce costs while preserving metadata
-  - Export manifest generation for record keeping
-  - Admin export panel with selection interface
+- ✅ Individual download system with automatic storage cleanup
+  - Individual document downloads with custom naming format: (StudentName)_SPUP_Clearance_2025_ABC123.zip
+  - Automatic storage cleanup after each download to reduce costs
+  - Firebase Storage integration for efficient file management
+  - Admin table with EllipsisVertical dropdown for individual actions
   - Fully optimized Firestore queries to avoid ALL index requirements (simple equality filters with client-side sorting)
+ - ✅ Safe download flow: prevent storage deletion when download fails; only delete after verified file fetch
+ - ✅ Exported-file custom link: admins can set and open a custom export link after files are removed
+ - ✅ Admins can remove an existing export link from a submission
+ - ✅ Unified download logic: both AdminTable and SubmissionCard now use the same download + storage removal flow
+ - ✅ Simplified download: removed unnecessary CORS fetch logic, now uses Firebase Storage URL directly
+ - ✅ Made Journal Format field not required for student submissions
+- ✅ Enhanced download error prevention: Added user confirmation dialog to verify successful download before file deletion from storage
+- ✅ Enhanced admin functionality: Added "Mark as Cleared" button, edit submission capability, and replaced JS alerts with ShadCN dialogs
+  - Added "Mark as Cleared" action button in admin dropdown menu
+  - Created comprehensive edit submission dialog for modifying student details
+  - Replaced JavaScript confirm() with professional ShadCN AlertDialog components
+  - Added mobile-responsive action buttons with improved layout
+- ✅ Fixed download functionality and added safety features
+  - Enhanced download compatibility with multiple browser download methods
+  - Added 5-second countdown timer to download confirmation dialog
+  - Improved error handling and debugging for download issues
+  - Added fallback methods (standard click, MouseEvent, window.open) for better browser compatibility
+- ✅ Corrected download flow for better user experience
+  - Download now happens immediately when clicking the download button
+  - Confirmation dialog now only asks about storage deletion (not download initiation)
+  - Clear separation: Download first, then confirm storage cleanup
+  - Updated dialog text to clearly indicate it's for storage deletion confirmation
+  - Maintains 5-second countdown for storage deletion safety
 
 ## 📁 PROJECT STRUCTURE
 
@@ -301,18 +324,16 @@ Students can now track their submission status using their ID:
   * Next steps guidance
   * Navigation to submit new requests
 
-### 📦 Export & Archive System
+### 📦 Individual Download System
 
 Cost optimization feature for managing Firebase Storage:
 
-* **Purpose:** Export cleared submission files and delete from storage to save costs
+* **Purpose:** Download individual submission files and automatically remove from storage to save costs
 * **Functionality:**
-  * ✅ Bulk export of cleared submissions as ZIP files
-  * ✅ Individual submission download with custom naming: `(StudentName)SPUP_Clearance_YYYY_ABC123.zip`
-  * ✅ Master ZIP creation: `SPUP_Clearance_Export_YYYY-MM-DD_X_submissions.zip`
+  * ✅ Individual submission download with custom naming: `(StudentName)_SPUP_Clearance_YYYY_ABC123.zip`
+  * ✅ Automatic storage cleanup after successful download
   * ✅ Firebase Storage integration using SDK (CORS-free)
   * ✅ Metadata retention in Firestore with `isExported` and `exportedAt` fields
-  * ✅ Automatic file deletion from storage after export
   * ✅ **Visual indicators in admin table for exported submissions**
 
 ### 🎨 Visual Export Indicators
@@ -370,5 +391,53 @@ export async function bulkExportSubmissions(submissions, options, onProgress) {
 ```
 
 **Final Resolution:** Firebase Storage CORS is fundamentally incompatible with programmatic client-side downloads. The optimal solution is intelligent individual downloads with browser-native mechanisms, proper delays, and excellent UX.
+
+### 🔧 Multi-Download Issue Resolution
+
+✅ **Fixed bulk download problem when selecting all submissions:**
+
+**Problem:** Bulk export was only downloading one file due to filename mismatch
+**Root Cause:** Export service was using old filename format (`${submission.id}.zip`) instead of new format (`${studentName}_${submission.id}.zip`)
+**Solution:** Updated both `bulkExportSubmissions` and `downloadSubmissionFile` functions to use new filename format
+**Result:** Multi-download now works correctly for all selected submissions
+
+**Files Updated:**
+- `src/services/exportService.ts` - Simplified to individual download functionality
+- `src/components/admin/AdminTable.tsx` - Added EllipsisVertical dropdown with View/Download actions
+- `src/app/admin/page.tsx` - Removed Export & Archive button and ExportPanel
+- `src/components/admin/ExportPanel.tsx` - **DELETED** (no longer needed)
+
+### 🚀 EllipsisVertical Dropdown Menu System
+
+✅ **Implemented ShadCN dropdown menu with EllipsisVertical icon:**
+
+**New Approach:** Clean dropdown menu (⋮) for each submission with View and Download options
+**Benefits:**
+- **Professional UI:** Modern dropdown menu design using ShadCN components
+- **Space Efficient:** Single icon button instead of multiple action buttons
+- **Better UX:** Organized actions in a clean dropdown interface
+- **Automatic Cleanup:** Files are removed from storage after download to save costs
+
+**Technical Implementation:**
+- **ShadCN Dropdown:** Uses @radix-ui/react-dropdown-menu for accessibility and styling
+- **EllipsisVertical Icon:** Clean three-dot menu icon from Lucide React
+- **Individual Actions:** View and Download options for each submission
+- **Automatic Cleanup:** Files automatically removed from Firebase Storage after successful download
+
+**Actions Available:**
+- **View:** Shows submission details and metadata in an alert
+- **Download:** Downloads file and automatically removes from storage (disabled for already downloaded files). Now validates file fetch before deletion to prevent data loss on errors. ✅
+- **Mark All as Exported:** Bulk operation to clean up all files
+
+**Smart Download Management:**
+- **Download Button:** Automatically disabled once file is downloaded
+- **Visual Feedback:** Shows "Already Downloaded" for exported submissions
+- **Prevents Duplicates:** Users cannot attempt to download already exported files
+- **Mobile Support:** Download buttons also disabled in mobile card view
+
+**UI Components Added:**
+- `src/components/ui/dropdown-menu.tsx` - ShadCN dropdown menu component
+- Updated AdminTable with EllipsisVertical dropdown interface
+- Removed Export & Archive button from main admin dashboard
 
 ---

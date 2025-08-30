@@ -6,6 +6,8 @@ export interface Student {
   studentId: string;
   adviser: string;
   course: string;
+  graduationMonth: string;
+  graduationYear: string;
   researchTitle: string;
   researchType: "Thesis" | "Capstone" | "Dissertation";
   groupMembers?: GroupMember[];
@@ -14,6 +16,7 @@ export interface Student {
   submittedAt: Date;
   isExported?: boolean; // Flag to indicate if files have been exported and removed from storage
   exportedAt?: Date; // When the files were exported
+  exportLink?: string; // Optional custom link provided after export
 }
 
 export interface GroupMember {
@@ -31,6 +34,8 @@ export interface StudentFormData {
   studentId: string;
   adviser: string;
   course: string;
+  graduationMonth: string;
+  graduationYear: string;
   researchTitle: string;
   researchType: ResearchType;
   groupMembers: GroupMember[];

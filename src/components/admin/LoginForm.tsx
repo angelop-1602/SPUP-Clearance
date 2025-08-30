@@ -101,7 +101,7 @@ export function LoginForm({ onLoginSuccess, isLoading = false }: LoginFormProps)
               className={`w-full py-3 px-4 rounded-md text-white font-medium transition-colors ${
                 isSubmitting || isLoading
                   ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500'
+                  : 'bg-primary hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary'
               }`}
             >
               {isSubmitting ? 'Signing In...' : 'Sign In'}

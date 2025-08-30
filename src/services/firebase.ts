@@ -8,7 +8,8 @@ import {
   query, 
   where, 
   orderBy,
-  Timestamp 
+  Timestamp,
+  deleteField 
 } from 'firebase/firestore';
 import { 
   ref, 
@@ -76,8 +77,9 @@ export async function submitStudentClearance(formData: StudentFormData): Promise
     // Generate ZIP file as blob
     const zipBlob = await zip.generateAsync({ type: 'blob' });
     
-    // Upload ZIP file to Firebase Storage
-    const zipFileName = `${documentId}.zip`;
+    // Upload ZIP file to Firebase Storage using student's full name
+    const sanitizedName = formData.name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+    const zipFileName = `${sanitizedName}_${documentId}.zip`;
     const zipRef = ref(storage, `submissions/${zipFileName}`);
     const uploadResult = await uploadBytes(zipRef, zipBlob);
     const zipDownloadURL = await getDownloadURL(uploadResult.ref);
@@ -91,6 +93,8 @@ export async function submitStudentClearance(formData: StudentFormData): Promise
       studentId: formData.studentId,
       adviser: formData.adviser,
       course: formData.course,
+      graduationMonth: formData.graduationMonth,
+      graduationYear: formData.graduationYear,
       researchTitle: formData.researchTitle,
       researchType: formData.researchType,
       zipFile: zipDownloadURL,
@@ -176,6 +180,7 @@ export async function getAllSubmissions(filters?: FilterOptions): Promise<Studen
         ...data,
         id: doc.id, // This will now be our custom SPUP_Clearance_YYYY_ABC123 format
         submittedAt: data.submittedAt?.toDate() || new Date(),
+        exportLink: data.exportLink || undefined,
       } as Student;
     });
 
@@ -210,6 +215,31 @@ export async function updateSubmissionStatus(
   } catch (error) {
     console.error('Error updating submission status:', error);
     throw new Error('Failed to update submission status');
+  }
+}
+
+/**
+ * Update submission details (admin only)
+ */
+export async function updateSubmissionDetails(
+  submissionId: string, 
+  updates: Partial<Student>
+): Promise<void> {
+  try {
+    const docRef = doc(db, 'submissions', submissionId);
+    
+    // Remove undefined fields and add timestamp
+    const cleanUpdates = Object.fromEntries(
+      Object.entries(updates).filter(([_, value]) => value !== undefined)
+    );
+    
+    await updateDoc(docRef, { 
+      ...cleanUpdates,
+      updatedAt: Timestamp.now()
+    });
+  } catch (error) {
+    console.error('Error updating submission details:', error);
+    throw new Error('Failed to update submission details');
   }
 }
 
@@ -289,10 +319,17 @@ export async function markSubmissionAsExported(
     // Optionally delete file from Firebase Storage
     if (deleteFromStorage) {
       try {
-        const fileName = `${submissionId}.zip`;
-        const fileRef = ref(storage, `submissions/${fileName}`);
-        await deleteObject(fileRef);
-        console.log(`Deleted file: ${fileName}`);
+        // Get submission data to find the actual filename
+        const submissionDoc = await getDoc(submissionRef);
+        if (submissionDoc.exists()) {
+          const data = submissionDoc.data();
+          const studentName = data.name;
+          const sanitizedName = studentName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+          const fileName = `${sanitizedName}_${submissionId}.zip`;
+          const fileRef = ref(storage, `submissions/${fileName}`);
+          await deleteObject(fileRef);
+          console.log(`Deleted file: ${fileName}`);
+        }
       } catch (error) {
         console.warn(`Failed to delete file for ${submissionId}:`, error);
         // Don't throw error if file deletion fails - metadata is still updated
@@ -353,6 +390,8 @@ export async function getSubmissionsForExport(): Promise<Student[]> {
           studentId: data.studentId,
           adviser: data.adviser,
           course: data.course,
+          graduationMonth: data.graduationMonth || '',
+          graduationYear: data.graduationYear || '',
           researchTitle: data.researchTitle,
           researchType: data.researchType,
           groupMembers: data.groupMembers,
@@ -360,7 +399,8 @@ export async function getSubmissionsForExport(): Promise<Student[]> {
           status: data.status,
           submittedAt: data.submittedAt.toDate(),
           isExported: data.isExported || false,
-          exportedAt: data.exportedAt?.toDate()
+          exportedAt: data.exportedAt?.toDate(),
+          exportLink: data.exportLink || undefined
         });
       }
     });
@@ -374,3 +414,29 @@ export async function getSubmissionsForExport(): Promise<Student[]> {
     throw new Error('Failed to fetch submissions for export');
   }
 } 
+
+/**
+ * Clear the custom export link for a submission
+ */
+export async function clearSubmissionExportLink(submissionId: string): Promise<void> {
+  try {
+    const submissionRef = doc(db, 'submissions', submissionId);
+    await updateDoc(submissionRef, { exportLink: deleteField() });
+  } catch (error) {
+    console.error('Error clearing export link:', error);
+    throw new Error('Failed to clear export link');
+  }
+}
+
+/**
+ * Set or update a custom export link for a submission
+ */
+export async function setSubmissionExportLink(submissionId: string, exportLink: string): Promise<void> {
+  try {
+    const submissionRef = doc(db, 'submissions', submissionId);
+    await updateDoc(submissionRef, { exportLink });
+  } catch (error) {
+    console.error('Error setting export link:', error);
+    throw new Error('Failed to set export link');
+  }
+}

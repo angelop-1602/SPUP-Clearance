@@ -6,8 +6,9 @@ import { LoginForm } from '@/components/admin/LoginForm';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { AdminTable } from '@/components/admin/AdminTable';
 import { SubmissionCard } from '@/components/admin/SubmissionCard';
-import { ExportPanel } from '@/components/admin/ExportPanel';
+
 import { onAuthStateChange, getAllSubmissions } from '@/services/firebase';
+import { toast } from 'sonner';
 import { Student, FilterOptions } from '@/types';
 
 export default function AdminPage() {
@@ -18,7 +19,7 @@ export default function AdminPage() {
   const [selectedSubmission, setSelectedSubmission] = useState<Student | null>(null);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
   const [currentFilters, setCurrentFilters] = useState<FilterOptions>({});
-  const [showExportPanel, setShowExportPanel] = useState(false);
+
 
   // Monitor authentication state
   useEffect(() => {
@@ -42,7 +43,7 @@ export default function AdminPage() {
       setFilteredSubmissions(data);
     } catch (error) {
       console.error('Error loading submissions:', error);
-      alert('Failed to load submissions');
+      toast.error('Failed to load submissions');
     } finally {
       setIsLoadingSubmissions(false);
     }
@@ -107,12 +108,6 @@ export default function AdminPage() {
           </div>
           <div className="mt-4 md:mt-0 flex space-x-3">
             <button
-              onClick={() => setShowExportPanel(true)}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
-            >
-              Export & Archive
-            </button>
-            <button
               onClick={() => loadSubmissions(currentFilters)}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
             >
@@ -158,6 +153,7 @@ export default function AdminPage() {
           onViewSubmission={handleViewSubmission}
           onFiltersChange={handleFiltersChange}
           isLoading={isLoadingSubmissions}
+          onSubmissionUpdate={handleSubmissionUpdate}
         />
 
         {/* Submission Detail Modal */}
@@ -169,9 +165,7 @@ export default function AdminPage() {
           />
         )}
 
-        {showExportPanel && (
-          <ExportPanel onClose={() => setShowExportPanel(false)} />
-        )}
+
       </div>
     </AdminLayout>
   );

@@ -9,6 +9,7 @@ interface DocumentUploadProps {
   file: File | null;
   onFileChange: (file: File | null) => void;
   error?: string;
+  isRequired?: boolean;
 }
 
 export function DocumentUpload({
@@ -18,26 +19,14 @@ export function DocumentUpload({
   file,
   onFileChange,
   error,
+  isRequired = true,
 }: DocumentUploadProps) {
   const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const validateFile = (selectedFile: File): string | null => {
-    // Check file type based on accept prop
-    const allowedExtensions = accept.split(",").map((ext) => ext.trim());
-    const fileExtension =
-      "." + selectedFile.name.split(".").pop()?.toLowerCase();
-
-    if (!allowedExtensions.includes(fileExtension)) {
-      return `File must be ${accept} format`;
-    }
-
-    // Check file size (10MB max per file)
-    const maxSize = 10 * 1024 * 1024; // 10MB in bytes
-    if (selectedFile.size > maxSize) {
-      return "File size must not exceed 10MB";
-    }
-
+    // All file types are accepted - no format restrictions
+    // File size limit removed - no maximum size restriction
     return null;
   };
 
@@ -104,7 +93,7 @@ export function DocumentUpload({
   return (
     <div className="space-y-2">
       <label className="block text-sm font-medium text-gray-700">
-        {label} *
+        {label} {isRequired && "*"}
       </label>
 
       <div
@@ -211,7 +200,7 @@ export function DocumentUpload({
               <span className="text-gray-500"> or drag and drop</span>
             </div>
             <p className="text-xs text-gray-500">
-              {accept.toUpperCase()} files only, max 10MB
+              All file types accepted
             </p>
           </div>
         )}
