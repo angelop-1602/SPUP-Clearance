@@ -61,6 +61,9 @@ export async function submitStudentClearance(formData: StudentFormData): Promise
             case 'journalFormat':
               fileName = `journal_format.${fileExtension}`;
               break;
+            case 'graduationPicture':
+              fileName = `graduation_picture.${fileExtension}`;
+              break;
             default:
               fileName = `${key}.${fileExtension}`;
           }

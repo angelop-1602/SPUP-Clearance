@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Student, FilterOptions } from '@/types';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { EllipsisVertical, Eye, Download, CheckCircle, Edit } from 'lucide-react';
+import { EllipsisVertical, Eye, Download, CheckCircle, Edit, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,8 +13,10 @@ import {
 import { downloadWithConfirmation } from '@/services/exportService';
 import { markSubmissionAsExported, updateSubmissionStatus } from '@/services/firebase';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
+import { DownloadConfirmationDialog } from '@/components/ui/DownloadConfirmationDialog';
 import { EditSubmissionDialog } from '@/components/admin/EditSubmissionDialog';
 import { toast } from 'sonner';
+import { useDebounce } from '@/hooks/useDebounce';
 
 // Exported Flag Component
 function ExportedFlag({ isExported, exportedAt }: { isExported?: boolean; exportedAt?: Date }) {
@@ -48,6 +50,10 @@ interface AdminTableProps {
   onSubmissionUpdate?: () => void;
 }
 
+type TabType = 'all' | 'pending' | 'cleared';
+
+const ITEMS_PER_PAGE = 10;
+
 export function AdminTable({ 
   submissions, 
   onViewSubmission, 
@@ -61,17 +67,62 @@ export function AdminTable({
     course: '',
     searchTerm: '',
   });
+  
+  // State for search input (not debounced)
+  const [searchInput, setSearchInput] = useState('');
+  
+  // Debounced search term
+  const debouncedSearchTerm = useDebounce(searchInput, 500);
+  
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabType>('all');
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Dialog states
   const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
-  const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState<Student | null>(null);
+  
+  // Local state for optimistic updates
+  const [localSubmissions, setLocalSubmissions] = useState<Student[]>(submissions);
+  
+  // Sync local submissions with props when they change
+  useEffect(() => {
+    setLocalSubmissions(submissions);
+  }, [submissions]);
+  
+  // Update filters when debounced search term changes
+  useEffect(() => {
+    const newFilters = { ...filters, searchTerm: debouncedSearchTerm };
+    setFilters(newFilters);
+    onFiltersChange(newFilters);
+    setCurrentPage(1); // Reset to first page when search changes
+  }, [debouncedSearchTerm]);
+  
+  // Update filters when tab changes
+  useEffect(() => {
+    let newStatus: 'all' | 'Submitted' | 'Cleared' = 'all';
+    if (activeTab === 'pending') newStatus = 'Submitted';
+    if (activeTab === 'cleared') newStatus = 'Cleared';
+    
+    const newFilters = { ...filters, status: newStatus };
+    setFilters(newFilters);
+    onFiltersChange(newFilters);
+    setCurrentPage(1); // Reset to first page when tab changes
+  }, [activeTab]);
 
   const handleFilterChange = (key: keyof FilterOptions, value: string) => {
+    if (key === 'searchTerm') {
+      setSearchInput(value);
+      return;
+    }
+    
     const newFilters = { ...filters, [key]: value };
     setFilters(newFilters);
     onFiltersChange(newFilters);
+    setCurrentPage(1); // Reset to first page when filters change
   };
 
   const formatDate = (date: Date) => {
@@ -87,6 +138,69 @@ export function AdminTable({
   const uniqueCourses = Array.from(
     new Set(submissions.map(s => s.course).filter(Boolean))
   ).sort();
+  
+  // Apply all filters client-side for better UX
+  const filteredSubmissions = useMemo(() => {
+    let filtered = localSubmissions;
+    
+    // Apply tab filter
+    switch (activeTab) {
+      case 'pending':
+        filtered = filtered.filter(s => s.status === 'Submitted');
+        break;
+      case 'cleared':
+        filtered = filtered.filter(s => s.status === 'Cleared');
+        break;
+      default:
+        // Show all
+        break;
+    }
+    
+    // Apply other filters
+    if (filters.level && filters.level !== 'all') {
+      filtered = filtered.filter(s => s.level === filters.level);
+    }
+    
+    if (filters.course) {
+      filtered = filtered.filter(s => s.course === filters.course);
+    }
+    
+    // Apply search filter
+    if (debouncedSearchTerm) {
+      const searchTerm = debouncedSearchTerm.toLowerCase();
+      filtered = filtered.filter(submission =>
+        submission.name.toLowerCase().includes(searchTerm) ||
+        submission.studentId.toLowerCase().includes(searchTerm) ||
+        submission.researchTitle.toLowerCase().includes(searchTerm) ||
+        submission.email.toLowerCase().includes(searchTerm)
+      );
+    }
+    
+    return filtered;
+  }, [localSubmissions, activeTab, filters.level, filters.course, debouncedSearchTerm]);
+  
+  // Pagination logic
+  const totalPages = Math.ceil(filteredSubmissions.length / ITEMS_PER_PAGE);
+  const paginatedSubmissions = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    return filteredSubmissions.slice(startIndex, endIndex);
+  }, [filteredSubmissions, currentPage]);
+  
+  // Tab counts
+  const tabCounts = useMemo(() => {
+    return {
+      all: localSubmissions.length,
+      pending: localSubmissions.filter(s => s.status === 'Submitted').length,
+      cleared: localSubmissions.filter(s => s.status === 'Cleared').length
+    };
+  }, [localSubmissions]);
+  
+  // Truncate name function
+  const truncateName = (name: string, maxLength: number = 25) => {
+    if (name.length <= maxLength) return name;
+    return name.substring(0, maxLength) + '...';
+  };
 
   // Dialog handlers
   const handleDownloadClick = async (submission: Student) => {
@@ -95,33 +209,61 @@ export function AdminTable({
       return;
     }
 
+    // Show loading toast
+    toast.loading(`Preparing download for ${submission.name}'s submission...`, { id: `download-${submission.id}` });
+
     try {
-      // Step 1: Download the file immediately
+      // Step 1: Download the file in background
       await downloadWithConfirmation(submission);
-      toast.success(`Download started for ${submission.name}'s submission. Check your Downloads folder.`);
       
-      // Step 2: Show confirmation dialog for storage deletion
+      // Step 2: Show success and ask for export link
+      toast.success(`Download completed! Check your Downloads folder.`, { id: `download-${submission.id}` });
+      
+      // Step 3: Show dialog for storage deletion with export link
       setSelectedSubmission(submission);
       setDownloadDialogOpen(true);
       
     } catch (error) {
       console.error('Download error:', error);
-      toast.error('Failed to download file. Please try again.');
+      toast.error('Failed to download file. Please try again.', { id: `download-${submission.id}` });
     }
   };
 
-  const handleDownloadConfirm = async () => {
+  const handleDownloadConfirm = async (exportLink: string) => {
     if (!selectedSubmission) return;
     
+    // Close dialog immediately for better UX
+    setDownloadDialogOpen(false);
+    
+    // Show processing toast
+    toast.loading(`Removing ${selectedSubmission.name}'s file from storage...`, { id: `storage-${selectedSubmission.id}` });
+    
     try {
-      // Only delete from storage - download already happened
+      // Delete from storage and optionally save export link
       await markSubmissionAsExported(selectedSubmission.id, true);
-      toast.success(`File removed from storage to save costs.`);
-      if (onSubmissionUpdate) onSubmissionUpdate();
+      
+      // If export link is provided, save it to the submission
+      if (exportLink.trim()) {
+        const { setSubmissionExportLink } = await import('@/services/firebase');
+        await setSubmissionExportLink(selectedSubmission.id, exportLink.trim());
+      }
+      
+      // Update local state only after server operations complete successfully
+      setLocalSubmissions(prevSubmissions => 
+        prevSubmissions.map(s => 
+          s.id === selectedSubmission.id 
+            ? { ...s, isExported: true, exportedAt: new Date(), exportLink: exportLink.trim() || undefined }
+            : s
+        )
+      );
+      
+      toast.success(`File removed from storage. Export link saved.`, { id: `storage-${selectedSubmission.id}` });
       
     } catch (error) {
       console.error('Storage deletion error:', error);
-      toast.error('Failed to remove file from storage. Please try again later.');
+      toast.error('Failed to remove file from storage. Please try again later.', { id: `storage-${selectedSubmission.id}` });
+    } finally {
+      setSelectedSubmission(null);
     }
   };
 
@@ -130,22 +272,28 @@ export function AdminTable({
       toast.info('This submission is already marked as cleared.');
       return;
     }
-    setSelectedSubmission(submission);
-    setClearDialogOpen(true);
+    
+    // Show processing toast
+    toast.loading(`Marking ${submission.name}'s submission as cleared...`, { id: `clear-${submission.id}` });
+    
+    // Wait for server confirmation before updating UI
+    updateSubmissionStatus(submission.id, 'Cleared')
+      .then(() => {
+        // Update local state only after server confirms success
+        setLocalSubmissions(prevSubmissions => 
+          prevSubmissions.map(s => 
+            s.id === submission.id ? { ...s, status: 'Cleared' as const } : s
+          )
+        );
+        toast.success(`Marked ${submission.name}'s submission as cleared.`, { id: `clear-${submission.id}` });
+      })
+      .catch((error) => {
+        console.error('Clear error:', error);
+        toast.error('Failed to mark submission as cleared.', { id: `clear-${submission.id}` });
+      });
   };
 
-  const handleClearConfirm = async () => {
-    if (!selectedSubmission) return;
-    
-    try {
-      await updateSubmissionStatus(selectedSubmission.id, 'Cleared');
-      toast.success(`Marked ${selectedSubmission.name}'s submission as cleared.`);
-      if (onSubmissionUpdate) onSubmissionUpdate();
-    } catch (error) {
-      console.error('Clear error:', error);
-      toast.error('Failed to mark submission as cleared.');
-    }
-  };
+  // Removed handleClearConfirm - now using direct optimistic updates
 
   const handleEditClick = (submission: Student) => {
     setSelectedSubmission(submission);
@@ -163,10 +311,48 @@ export function AdminTable({
 
   return (
     <div className="bg-white rounded-lg shadow-md">
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="flex space-x-8 px-6 pt-4" aria-label="Tabs">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'all'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            All Submissions ({tabCounts.all})
+          </button>
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'pending'
+                ? 'border-yellow-500 text-yellow-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Pending ({tabCounts.pending})
+          </button>
+          <button
+            onClick={() => setActiveTab('cleared')}
+            className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'cleared'
+                ? 'border-green-500 text-green-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Cleared ({tabCounts.cleared})
+          </button>
+        </nav>
+      </div>
+      
       {/* Filters */}
       <div className="p-6 border-b border-gray-200">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          All Submissions 
+          {activeTab === 'all' && 'All Submissions'}
+          {activeTab === 'pending' && 'Pending Submissions'}
+          {activeTab === 'cleared' && 'Cleared Submissions'}
         </h2>
         
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -176,8 +362,8 @@ export function AdminTable({
             </label>
             <input
               type="text"
-              placeholder="Name, ID, or title..."
-              value={filters.searchTerm || ''}
+              placeholder="Name, ID, or course..."
+              value={searchInput}
               onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -233,85 +419,106 @@ export function AdminTable({
         </div>
       </div>
 
-      {/* Table - Mobile Card View for Small Screens */}
-      <div className="hidden md:block overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+      {/* Table - Desktop View */}
+      <div className="hidden lg:block">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Student
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Research Title
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Course/Program
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Level/Type
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Research Type
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Submitted
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {submissions.length === 0 ? (
+            {paginatedSubmissions.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
-                  No submissions found
+                  {activeTab === 'all' && 'No submissions found'}
+                  {activeTab === 'pending' && 'No pending submissions'}
+                  {activeTab === 'cleared' && 'No cleared submissions'}
                 </td>
               </tr>
             ) : (
-              submissions.map((submission) => (
+              paginatedSubmissions.map((submission) => (
                 <tr key={submission.id} className="hover:bg-gray-50">
-
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  {/* Student */}
+                  <td className="px-4 py-4 whitespace-nowrap">
                     <div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {submission.name}
+                      <div 
+                        className="text-sm font-medium text-gray-900 cursor-help" 
+                        title={submission.name}
+                      >
+                        {truncateName(submission.name)}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {submission.studentId} • {submission.course}
+                        {submission.studentId}
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900 max-w-xs truncate">
-                      {submission.researchTitle}
+                  
+                  {/* Course/Program */}
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
+                      {submission.course}
                     </div>
-                    <div className="text-sm text-gray-500">
-                      Adviser: {submission.adviser}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900 capitalize">
+                    <div className="text-sm text-gray-500 capitalize">
                       {submission.level}
                     </div>
-                    <div className="text-sm text-gray-500">
+                  </td>
+                  
+                  {/* Research Type */}
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
                       {submission.researchType}
                     </div>
+                    {submission.researchType !== 'Non-Thesis' && submission.adviser && (
+                      <div className="text-sm text-gray-500">
+                        Adviser: {truncateName(submission.adviser, 20)}
+                      </div>
+                    )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  
+                  {/* Status */}
+                  <td className="px-4 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <StatusBadge status={submission.status} />
                       <ExportedFlag isExported={submission.isExported} exportedAt={submission.exportedAt} />
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  
+                  {/* Submitted Date */}
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                     {formatDate(submission.submittedAt)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <DropdownMenu>
+                  
+                  {/* Actions */}
+                  <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                    <DropdownMenu key={`dropdown-${submission.id}`}>
                       <DropdownMenuTrigger asChild>
-                        <button className="p-2 hover:bg-gray-100 rounded-md transition-colors">
+                        <button 
+                          className="p-2 hover:bg-gray-100 rounded-md transition-colors"
+                          aria-label={`Actions for ${submission.name}`}
+                        >
                             <EllipsisVertical className="h-4 w-4 text-gray-600" />
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" key={`content-${submission.id}`}>
                         <DropdownMenuItem onClick={() => onViewSubmission(submission)}>
                           <Eye className="h-4 w-4 mr-2" />
                           <span>View</span>
@@ -352,16 +559,19 @@ export function AdminTable({
               ))
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       {/* Mobile Card View */}
-      <div className="md:hidden divide-y divide-gray-200">
-        {submissions.map((submission: Student) => (
+      <div className="lg:hidden divide-y divide-gray-200">
+        {paginatedSubmissions.map((submission: Student) => (
           <div key={submission.id} className="p-4 hover:bg-gray-50">
             <div className="flex justify-between items-start mb-2">
               <div>
-                <h3 className="font-medium text-gray-900 text-sm">{submission.name}</h3>
+                <h3 className="font-medium text-gray-900 text-sm" title={submission.name}>
+                  {truncateName(submission.name, 20)}
+                </h3>
                 <p className="text-xs text-gray-500">{submission.studentId}</p>
               </div>
               <div className="flex flex-col items-end space-y-1">
@@ -372,7 +582,13 @@ export function AdminTable({
             
             <div className="space-y-1 text-xs text-gray-600 mb-3">
               <p><span className="font-medium">Course:</span> {submission.course}</p>
-              <p><span className="font-medium">Research:</span> {submission.researchTitle}</p>
+              <p><span className="font-medium">Research Type:</span> {submission.researchType}</p>
+              {submission.researchType !== 'Non-Thesis' && submission.researchTitle && (
+                <p><span className="font-medium">Research:</span> <span title={submission.researchTitle}>{truncateName(submission.researchTitle, 30)}</span></p>
+              )}
+              {submission.researchType !== 'Non-Thesis' && submission.adviser && (
+                <p><span className="font-medium">Adviser:</span> {truncateName(submission.adviser, 25)}</p>
+              )}
               <p><span className="font-medium">Level:</span> {submission.level}</p>
               <p><span className="font-medium">Submitted:</span> {submission.submittedAt.toLocaleDateString()}</p>
             </div>
@@ -416,35 +632,102 @@ export function AdminTable({
             </div>
           </div>
         ))}
+        
+        {paginatedSubmissions.length === 0 && (
+          <div className="p-8 text-center text-gray-500">
+            {activeTab === 'all' && 'No submissions found'}
+            {activeTab === 'pending' && 'No pending submissions'}
+            {activeTab === 'cleared' && 'No cleared submissions'}
+          </div>
+        )}
       </div>
+      
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+          <div className="text-sm text-gray-700">
+            Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to{' '}
+            {Math.min(currentPage * ITEMS_PER_PAGE, filteredSubmissions.length)} of{' '}
+            {filteredSubmissions.length} results
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            
+            <div className="flex space-x-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                // Show first page, last page, current page, and pages around current
+                const showPage = page === 1 || page === totalPages || 
+                  (page >= currentPage - 1 && page <= currentPage + 1);
+                
+                if (!showPage) {
+                  // Show ellipsis
+                  if (page === 2 && currentPage > 4) {
+                    return <span key={page} className="px-2 py-1 text-gray-500">...</span>;
+                  }
+                  if (page === totalPages - 1 && currentPage < totalPages - 3) {
+                    return <span key={page} className="px-2 py-1 text-gray-500">...</span>;
+                  }
+                  return null;
+                }
+                
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`px-3 py-1 text-sm rounded-md ${
+                      currentPage === page
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+            </div>
+            
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Dialogs */}
-      <ConfirmationDialog
+      <DownloadConfirmationDialog
         isOpen={downloadDialogOpen}
-        onOpenChange={setDownloadDialogOpen}
+        onOpenChange={(open) => {
+          setDownloadDialogOpen(open);
+          if (!open) setSelectedSubmission(null); // Reset selected submission when dialog closes
+        }}
         title="Confirm Storage Deletion"
         description={`The file for ${selectedSubmission?.name}'s submission has been downloaded to your computer.\n\nDo you want to remove it from Firebase Storage to save costs?\n\n✅ File downloaded to your computer\n🗑️ Remove from cloud storage (saves money)\n\nWARNING: Once deleted from storage, the file cannot be downloaded again from the admin panel.`}
         confirmText="Remove from Storage"
         cancelText="Keep in Storage"
         onConfirm={handleDownloadConfirm}
-        variant="destructive"
-        countdown={5}
+        studentName={selectedSubmission?.name}
       />
 
-      <ConfirmationDialog
-        isOpen={clearDialogOpen}
-        onOpenChange={setClearDialogOpen}
-        title="Mark as Cleared"
-        description={`Are you sure you want to mark ${selectedSubmission?.name}'s submission as cleared?\n\nThis action will change the status from "Submitted" to "Cleared".`}
-        confirmText="Mark as Cleared"
-        cancelText="Cancel"
-        onConfirm={handleClearConfirm}
-      />
+      {/* Clear confirmation dialog removed - now using direct processing */}
 
       {/* Edit Dialog */}
       <EditSubmissionDialog
         isOpen={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) setSelectedSubmission(null); // Reset selected submission when dialog closes
+        }}
         submission={selectedSubmission}
         onUpdate={() => {
           if (onSubmissionUpdate) onSubmissionUpdate();

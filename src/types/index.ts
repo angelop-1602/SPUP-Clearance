@@ -9,7 +9,7 @@ export interface Student {
   graduationMonth: string;
   graduationYear: string;
   researchTitle: string;
-  researchType: "Thesis" | "Capstone" | "Dissertation";
+  researchType: "Thesis" | "Capstone" | "Dissertation" | "Non-Thesis";
   groupMembers?: GroupMember[];
   zipFile: string; // URL of ZIP file containing all documents
   status: "Submitted" | "Cleared";
@@ -25,7 +25,7 @@ export interface GroupMember {
 }
 
 export type Level = 'undergrad' | 'grad';
-export type ResearchType = 'Thesis' | 'Capstone' | 'Dissertation';
+export type ResearchType = 'Thesis' | 'Capstone' | 'Dissertation' | 'Non-Thesis';
 
 export interface StudentFormData {
   level: Level;
@@ -44,6 +44,7 @@ export interface StudentFormData {
     fullPaper: File | null;
     longAbstract: File | null;
     journalFormat: File | null;
+    graduationPicture: File | null;
   };
 }
 
@@ -60,7 +61,7 @@ export interface FilterOptions {
 }
 
 export interface RequiredDocument {
-  key: 'approvalSheet' | 'fullPaper' | 'longAbstract' | 'journalFormat';
+  key: 'approvalSheet' | 'fullPaper' | 'longAbstract' | 'journalFormat' | 'graduationPicture';
   label: string;
   accept: string;
   description?: string;
@@ -90,5 +91,11 @@ export const REQUIRED_DOCUMENTS: RequiredDocument[] = [
     label: 'Journal Format',
     accept: '.docx',
     description: 'DOCX format only'
+  },
+  {
+    key: 'graduationPicture',
+    label: 'Graduation Picture',
+    accept: 'image/*',
+    description: 'Optional graduation picture for non-thesis submissions. If not available, submit a high definition 2x2 picture.'
   }
 ]; 

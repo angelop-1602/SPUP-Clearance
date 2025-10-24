@@ -251,6 +251,25 @@ createAdminUser('your_secure_password').then(() => console.log('Admin created!')
   - Clear separation: Download first, then confirm storage cleanup
   - Updated dialog text to clearly indicate it's for storage deletion confirmation
   - Maintains 5-second countdown for storage deletion safety
+- ✅ Enhanced admin table performance and UX improvements
+  - Implemented debounced search (500ms delay) to prevent excessive re-rendering on every keystroke
+  - Fixed table responsiveness issues by optimizing state management and client-side filtering
+  - Added status tabs (All, Pending, Cleared) with real-time counts for better navigation
+  - Implemented pagination (10 items per page) with smart ellipsis for large datasets
+  - Added student name truncation with hover tooltips for better space utilization
+  - Improved responsive design: changed breakpoint from md to lg for better mobile experience
+  - Enhanced table layout to prevent horizontal scrolling on smaller screens
+  - Added useDebounce custom hook for reusable debouncing functionality
+- ✅ Enhanced form functionality with Non-Thesis research type support
+  - Added new "Non-Thesis" research type option to the system
+  - Implemented conditional form fields based on research type selection
+  - For Non-Thesis submissions: removed research adviser, research title, and group members fields
+  - Added optional graduation picture upload specifically for Non-Thesis research type
+  - Updated form validation logic to handle conditional required fields
+  - Automatically clears research-related fields when switching to Non-Thesis
+  - Updated Firebase service to handle graduation picture in ZIP file processing
+  - Maintained backward compatibility with existing Thesis, Capstone, and Dissertation types
+  - Enhanced TypeScript type safety with proper type assertions for new research type
 
 ## 📁 PROJECT STRUCTURE
 

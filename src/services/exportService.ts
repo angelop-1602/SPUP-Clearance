@@ -42,7 +42,7 @@ export async function downloadSubmissionFile(submission: Student): Promise<void>
       link.href = downloadURL;
       link.download = customFileName;
       link.style.display = 'none';
-      link.target = '_blank'; // Add target blank for better compatibility
+      // Remove target="_blank" to prevent opening new tabs
       
       document.body.appendChild(link);
       console.log('Triggering download...');
@@ -67,9 +67,20 @@ export async function downloadSubmissionFile(submission: Student): Promise<void>
         } catch (dispatchError) {
           console.warn('MouseEvent dispatch failed:', dispatchError);
           
-          // Method 3: Fallback to window.open
-          console.log('Falling back to window.open');
-          window.open(downloadURL, '_blank');
+          // Method 3: Fallback - try direct navigation
+          console.log('Falling back to direct navigation');
+          // Create a temporary iframe to handle download without opening new tab
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = downloadURL;
+          document.body.appendChild(iframe);
+          
+          // Clean up iframe after a delay
+          setTimeout(() => {
+            if (document.body.contains(iframe)) {
+              document.body.removeChild(iframe);
+            }
+          }, 5000);
         }
       }
       

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User } from 'firebase/auth';
 import { LoginForm } from '@/components/admin/LoginForm';
 import { AdminLayout } from '@/components/admin/AdminLayout';
@@ -49,10 +49,19 @@ export default function AdminPage() {
     }
   };
 
-  const handleFiltersChange = (filters: FilterOptions) => {
+  const handleFiltersChange = useCallback((filters: FilterOptions) => {
     setCurrentFilters(filters);
-    loadSubmissions(filters);
-  };
+    // Only reload from server if level, course filters change
+    // Search and status filters are handled client-side for better performance
+    const { searchTerm, status, ...serverFilters } = filters;
+    const { searchTerm: currentSearch, status: currentStatus, ...currentServerFilters } = currentFilters;
+    
+    const needsServerReload = JSON.stringify(serverFilters) !== JSON.stringify(currentServerFilters);
+    
+    if (needsServerReload) {
+      loadSubmissions(serverFilters);
+    }
+  }, [currentFilters]);
 
   const handleViewSubmission = (submission: Student) => {
     setSelectedSubmission(submission);
@@ -149,7 +158,7 @@ export default function AdminPage() {
 
         {/* Submissions Table */}
         <AdminTable
-          submissions={filteredSubmissions}
+          submissions={submissions}
           onViewSubmission={handleViewSubmission}
           onFiltersChange={handleFiltersChange}
           isLoading={isLoadingSubmissions}
