@@ -11,21 +11,33 @@ export interface Student {
   researchTitle: string;
   researchType: "Thesis" | "Capstone" | "Dissertation" | "Non-Thesis";
   groupMembers?: GroupMember[];
+  fileList?: string[];
   zipFile: string; // URL of ZIP file containing all documents
   status: "Submitted" | "Cleared";
   submittedAt: Date;
+  updatedAt?: Date;
   isExported?: boolean; // Flag to indicate if files have been exported and removed from storage
   exportedAt?: Date; // When the files were exported
   exportLink?: string; // Optional custom link provided after export
+  leaderCleared?: boolean;
 }
 
 export interface GroupMember {
   name: string;
   studentID: string;
+  isCleared?: boolean;
 }
 
 export type Level = 'undergrad' | 'grad';
 export type ResearchType = 'Thesis' | 'Capstone' | 'Dissertation' | 'Non-Thesis';
+
+export interface LegacyDocuments {
+  approvalSheet: File | null;
+  fullPaper: File | null;
+  longAbstract: File | null;
+  journalFormat: File | null;
+  graduationPicture: File | null;
+}
 
 export interface StudentFormData {
   level: Level;
@@ -39,13 +51,9 @@ export interface StudentFormData {
   researchTitle: string;
   researchType: ResearchType;
   groupMembers: GroupMember[];
-  documents: {
-    approvalSheet: File | null;
-    fullPaper: File | null;
-    longAbstract: File | null;
-    journalFormat: File | null;
-    graduationPicture: File | null;
-  };
+  uploadedFiles: File[];
+  // Legacy fallback for older submission payloads.
+  documents?: LegacyDocuments;
 }
 
 export interface AdminUser {
@@ -54,9 +62,7 @@ export interface AdminUser {
 }
 
 export interface FilterOptions {
-  level?: "undergrad" | "grad" | "all";
-  status?: "Submitted" | "Cleared" | "all";
-  course?: string;
+  researchType?: "Thesis" | "Capstone" | "Dissertation" | "Non-Thesis" | "all";
   searchTerm?: string;
 }
 

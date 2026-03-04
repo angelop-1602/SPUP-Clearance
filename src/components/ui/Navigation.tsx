@@ -6,7 +6,14 @@ import Image from 'next/image';
 import { User } from 'firebase/auth';
 
 interface NavigationProps {
-  currentPage?: 'home' | 'track' | 'admin';
+  currentPage?:
+    | 'home'
+    | 'undergraduate'
+    | 'graduate'
+    | 'coordinators'
+    | 'track'
+    | 'admin'
+    | 'admin-duplicates';
   showAdminLink?: boolean;
   // Admin-specific props
   user?: User | null;
@@ -14,42 +21,70 @@ interface NavigationProps {
 }
 
 export function Navigation({ currentPage = 'home', showAdminLink = true, user, onLogout }: NavigationProps) {
-  const getPageBadge = () => {
-    switch (currentPage) {
-      case 'home':
-        return (
-          <span className="px-2 py-1 bg-primary-100 text-primary-800 text-xs font-medium rounded">
-            New Submission
-          </span>
-        );
-      case 'track':
-        return (
-          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
-            Track Submission
-          </span>
-        );
-      case 'admin':
-        return (
-          <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded">
-            Admin Panel
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
-
   const getNavigationLinks = () => {
     const links = [];
+    const isAdminPage = currentPage === 'admin' || currentPage === 'admin-duplicates';
+
+    if (isAdminPage) {
+      if (currentPage !== 'admin') {
+        links.push(
+          <Link
+            key="admin-dashboard"
+            href="/admin"
+            className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
+          >
+            Dashboard
+          </Link>
+        );
+      }
+
+      if (currentPage !== 'admin-duplicates') {
+        links.push(
+          <Link
+            key="admin-duplicates"
+            href="/admin/duplicates"
+            className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
+          >
+            Duplications
+          </Link>
+        );
+      }
+
+      return links;
+    }
     
-    if (currentPage !== 'home') {
+    if (currentPage !== 'undergraduate') {
       links.push(
         <Link
-          key="home"
-          href="/"
+          key="undergraduate"
+          href="/undergraduate"
           className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
         >
-          New Submission
+          Undergraduate Submission
+        </Link>
+      );
+    }
+
+    if (currentPage !== 'graduate') {
+      links.push(
+        <Link
+          key="graduate"
+          href="/graduate"
+          className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
+        >
+          Graduate Submission
+        </Link>
+      );
+    }
+
+    if (currentPage !== 'coordinators') {
+      links.push(
+        <Link
+          key="coordinators"
+          href="/coordinators"
+          className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
+        >
+          Coordinator Lookup
         </Link>
       );
     }
@@ -66,7 +101,7 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
       );
     }
     
-    if (showAdminLink && currentPage !== 'admin') {
+    if (showAdminLink) {
       links.push(
         <Link
           key="admin"
@@ -114,9 +149,8 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3">
                 <h1 className="text-lg sm:text-xl font-semibold text-gray-900 text-center sm:text-left">
-                  Student Clearance System
+                  CPRINT Student Clearance
                 </h1>
-                {/* {getPageBadge()} */}
               </div>
             </div>
           </div>
@@ -125,7 +159,7 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
           <div className="flex items-center space-x-2 sm:space-x-4">
             {getNavigationLinks()}
 
-            {currentPage === 'admin' && user && (
+            {(currentPage === 'admin' || currentPage === 'admin-duplicates') && user && (
           <div className="px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-12">
               <div className="text-sm ">

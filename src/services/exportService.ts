@@ -1,8 +1,7 @@
 "use client";
 
 import { Student } from '@/types';
-import { storage } from '@/lib/firebase';
-import { ref, getDownloadURL } from 'firebase/storage';
+import JSZip from 'jszip';
 
 /**
  * Export Service for downloading and managing cleared submissions
@@ -20,85 +19,41 @@ export async function downloadSubmissionFile(submission: Student): Promise<void>
 
     console.log('Starting download for submission:', submission.id);
     console.log('Original zipFile URL:', submission.zipFile);
-
-    // Get signed download URL from Firebase Storage using new filename format
+    
     const sanitizedName = submission.name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
-    const storageFileName = `${sanitizedName}_${submission.id}.zip`;
-    console.log('Looking for file:', storageFileName);
-    
-    const fileRef = ref(storage, `submissions/${storageFileName}`);
-    
-    // Verify file exists in storage before attempting download
-    try {
-      const downloadURL = await getDownloadURL(fileRef);
-      console.log('Got download URL:', downloadURL);
-      
-      // Use student name + submission ID as filename for better identification
-      const customFileName = `${sanitizedName}_${submission.id}.zip`;
-      console.log('Custom filename:', customFileName);
-      
-      // Create temporary download link and trigger native browser download
-      const link = document.createElement('a');
-      link.href = downloadURL;
-      link.download = customFileName;
-      link.style.display = 'none';
-      // Remove target="_blank" to prevent opening new tabs
-      
-      document.body.appendChild(link);
-      console.log('Triggering download...');
-      
-      // Try multiple methods for better browser compatibility
-      try {
-        // Method 1: Standard click
-        link.click();
-        console.log('Standard click executed');
-      } catch (clickError) {
-        console.warn('Standard click failed:', clickError);
-        
-        try {
-          // Method 2: MouseEvent dispatch
-          const clickEvent = new MouseEvent('click', {
-            view: window,
-            bubbles: true,
-            cancelable: false
-          });
-          link.dispatchEvent(clickEvent);
-          console.log('MouseEvent dispatch executed');
-        } catch (dispatchError) {
-          console.warn('MouseEvent dispatch failed:', dispatchError);
-          
-          // Method 3: Fallback - try direct navigation
-          console.log('Falling back to direct navigation');
-          // Create a temporary iframe to handle download without opening new tab
-          const iframe = document.createElement('iframe');
-          iframe.style.display = 'none';
-          iframe.src = downloadURL;
-          document.body.appendChild(iframe);
-          
-          // Clean up iframe after a delay
-          setTimeout(() => {
-            if (document.body.contains(iframe)) {
-              document.body.removeChild(iframe);
-            }
-          }, 5000);
-        }
-      }
-      
-      // Clean up
-      setTimeout(() => {
-        if (document.body.contains(link)) {
-          document.body.removeChild(link);
-        }
-      }, 100);
-      
-      console.log('Download initiated successfully');
+    const customFileName = `${sanitizedName}_${submission.id}.zip`;
+    const downloadURL = submission.zipFile;
+    console.log('Using submission zip URL for download');
 
-      // Note: This only initiates the download, doesn't guarantee completion
-      // The caller should handle storage cleanup with user confirmation
-    } catch (storageError) {
-      console.error('Storage error:', storageError);
-      throw new Error(`File not found in storage: ${storageError}`);
+    const link = document.createElement('a');
+    link.href = downloadURL;
+    link.download = customFileName;
+    link.style.display = 'none';
+    
+    document.body.appendChild(link);
+    console.log('Triggering download...');
+    
+    try {
+      link.click();
+      console.log('Standard click executed');
+    } catch (clickError) {
+      console.warn('Standard click failed:', clickError);
+      const clickEvent = new MouseEvent('click', {
+        view: window,
+        bubbles: true,
+        cancelable: false
+      });
+      link.dispatchEvent(clickEvent);
+      console.log('MouseEvent dispatch executed');
     }
+    
+    setTimeout(() => {
+      if (document.body.contains(link)) {
+        document.body.removeChild(link);
+      }
+    }, 100);
+    
+    console.log('Download initiated successfully');
   } catch (error) {
     console.error('Download initiation failed:', error);
     throw error;
@@ -123,5 +78,93 @@ export async function downloadWithConfirmation(submission: Student): Promise<voi
   }
 }
 
+/**
+ * Downloads a submission's ZIP, extracts it client-side, and writes files
+ * into a user-selected directory using the File System Access API.
+ *
+ * Notes:
+ * - Requires Chromium-based browsers with `showDirectoryPicker` support
+ * - Firebase Storage must allow CORS for programmatic fetch of the signed URL
+ * - Preserves the internal folder structure of the ZIP
+ */
+export async function downloadSubmissionAsFolder(submission: Student): Promise<void> {
+  if (typeof window === 'undefined') {
+    throw new Error('This action must run in the browser.');
+  }
 
+  // Feature detection for File System Access API
+  // @ts-expect-error: showDirectoryPicker is experimental but present in Chromium
+  if (typeof window.showDirectoryPicker !== 'function') {
+    throw new Error('Folder download requires a Chromium browser (showDirectoryPicker not available).');
+  }
 
+  if (!submission) {
+    throw new Error('Invalid submission data.');
+  }
+
+  if (!submission.zipFile) {
+    throw new Error('No file available for this submission');
+  }
+
+  const sanitizedName = submission.name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+  const downloadURL = submission.zipFile;
+
+  // 2) Fetch ZIP via same-origin proxy to avoid Firebase CORS
+  const response = await fetch('/api/download-submission', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: downloadURL })
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ZIP: ${response.status} ${response.statusText}`);
+  }
+  const zipBlob = await response.blob();
+
+  // 3) Unzip client-side
+  const zip = await JSZip.loadAsync(zipBlob);
+
+  // 4) Ask user for a target directory (ID must be <= 32 chars)
+  const safeId = (() => {
+    const base = sanitizedName || 'Student';
+    const trimmed = base.slice(0, 27); // leave room for prefix
+    return `sub-${trimmed}`; // <= 31 chars
+  })();
+  // @ts-expect-error: showDirectoryPicker is experimental but present in Chromium
+  const rootDirHandle: FileSystemDirectoryHandle = await window.showDirectoryPicker({
+    id: safeId,
+    mode: 'readwrite'
+  });
+
+  // Optionally, create a subfolder with the student's name under the chosen directory
+  const studentRoot = await rootDirHandle.getDirectoryHandle(sanitizedName.slice(0, 50) || 'Student', { create: true });
+
+  // Helper: ensure nested directory path exists, return its handle
+  async function ensureDirectory(root: FileSystemDirectoryHandle, folders: string[]): Promise<FileSystemDirectoryHandle> {
+    let current = root;
+    for (const folder of folders) {
+      // Some ZIPs may include leading/trailing slashes or empty segments
+      if (!folder) continue;
+      current = await current.getDirectoryHandle(folder, { create: true });
+    }
+    return current;
+  }
+
+  // 5) Write files preserving structure
+  const writeOperations: Promise<void>[] = [];
+  zip.forEach((relativePath, entry) => {
+    if (entry.dir) return; // skip folders; they are created as needed
+
+    writeOperations.push((async () => {
+      const parts = relativePath.split('/');
+      const fileName = parts.pop() || 'file';
+      const dirHandle = await ensureDirectory(studentRoot, parts);
+      const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+      const writable = await fileHandle.createWritable();
+      const content = await entry.async('arraybuffer');
+      await writable.write(content);
+      await writable.close();
+    })());
+  });
+
+  await Promise.all(writeOperations);
+}

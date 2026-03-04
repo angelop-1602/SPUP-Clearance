@@ -460,3 +460,41 @@ export async function bulkExportSubmissions(submissions, options, onProgress) {
 - Removed Export & Archive button from main admin dashboard
 
 ---
+
+## 📋 Tasking (Working List)
+
+- [x] Add "Download as Folder" (auto-extract) support via JSZip + File System Access API
+  - Added `downloadSubmissionAsFolder(submission)` in `src/services/exportService.ts`
+  - Preserves folder hierarchy by writing files to a user-chosen directory
+  - Requires Chromium browsers and Firebase Storage CORS for programmatic fetch
+  
+- [x] Temporarily hide “Download as Folder” in UI (feature gated)
+  - Added `SHOW_FOLDER_DOWNLOAD = false` in `src/components/admin/AdminTable.tsx`
+  - Dropdown item and mobile button are conditionally hidden
+
+- [x] Auto-load submitted folder contents in View dialog
+  - `SubmissionCard` now fetches and displays ZIP contents on open (no button)
+  - Uses `/api/download-submission` proxy + JSZip to list files
+
+- [x] Add individual file download buttons in View dialog
+  - Per-file "Download" beside each entry in `SubmissionCard`
+  - Generates file from ZIP entry and triggers browser save
+
+- [x] Add delete button for submissions
+  - Delete button added to SubmissionCard component
+  - Delete button added to AdminTable dropdown menu
+  - Deletes submission from Firestore and associated files from Firebase Storage
+  - Includes confirmation dialog before deletion
+
+- [x] Add column indicators for attached link and downloaded file
+  - Added "File" column with FileDown icon (green if downloaded, gray if available)
+  - Added "Link" column with Link2 icon (blue if link attached, dash if not)
+  - Indicators also shown in mobile card view
+
+- [x] Replace level, status, and course filters with research type filter
+  - Removed level, status, and course filters from AdminTable
+  - Added research type filter with options: All, Thesis, Capstone, Dissertation, Non-Thesis
+  - Updated FilterOptions interface to only include researchType and searchTerm
+  - Updated getAllSubmissions function to filter by research type
+  - Status filtering still works via tabs (All, Pending, Cleared)
+

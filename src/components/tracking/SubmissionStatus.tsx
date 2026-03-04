@@ -101,7 +101,7 @@ export function SubmissionStatus({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Student Name
+                    {submission.level === "undergrad" ? "Leader Name" : "Student Name"}
                   </label>
                   <p className="text-sm text-gray-900">{submission.name}</p>
                 </div>

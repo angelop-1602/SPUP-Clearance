@@ -9,9 +9,15 @@ interface AdminLayoutProps {
   children: React.ReactNode;
   user: User;
   onLogout: () => void;
+  currentPage?: 'admin' | 'admin-duplicates';
 }
 
-export function AdminLayout({ children, user, onLogout }: AdminLayoutProps) {
+export function AdminLayout({
+  children,
+  user,
+  onLogout,
+  currentPage = 'admin',
+}: AdminLayoutProps) {
   const handleLogout = async () => {
     try {
       await adminLogout();
@@ -24,7 +30,7 @@ export function AdminLayout({ children, user, onLogout }: AdminLayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation 
-        currentPage="admin" 
+        currentPage={currentPage}
         showAdminLink={false} 
         user={user}
         onLogout={handleLogout}

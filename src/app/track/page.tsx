@@ -68,7 +68,7 @@ export default function TrackPage() {
       <footer className="bg-white border-t mt-16 fixed bottom-0 w-full">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center text-gray-500 text-sm">
-            <p>&copy; 2025 Student Clearance System. All rights reserved.</p>
+            <p>&copy; 2025 CPRINT Student Clearance. All rights reserved.</p>
             <p className="mt-2">
               For assistance, please contact: <a href="mailto:cprint@spup.edu.ph" className="text-primary-600 hover:text-primary-800">cprint@spup.edu.ph</a>
             </p>

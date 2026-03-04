@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SPUP Student Clearance System",
-  description: "SPUP Student Clearance System",
+  title: "CPRINT Student Clearance",
+  description: "CPRINT Student Clearance",
 };
 
 export default function RootLayout({

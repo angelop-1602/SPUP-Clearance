@@ -59,6 +59,7 @@ export function ConfirmationDialog({
   }, [isCountdownActive, timeLeft]);
 
   const handleConfirm = () => {
+    // Match DownloadConfirmationDialog pattern: call onConfirm first, then close dialog
     onConfirm();
     onOpenChange(false);
   };

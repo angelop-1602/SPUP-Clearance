@@ -1,110 +1,72 @@
-"use client";
-
-import React, { useState } from 'react';
-import { StudentForm } from '@/components/forms/StudentForm';
-import { Navigation } from '@/components/ui/Navigation';
-import { submitStudentClearance } from '@/services/firebase';
-import { StudentFormData } from '@/types';
+import Link from "next/link";
+import { Navigation } from "@/components/ui/Navigation";
 
 export default function Home() {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionResult, setSubmissionResult] = useState<{
-    success: boolean;
-    documentId?: string;
-    error?: string;
-  } | null>(null);
-
-  const handleSubmit = async (formData: StudentFormData) => {
-    setIsSubmitting(true);
-    try {
-      const documentId = await submitStudentClearance(formData);
-      setSubmissionResult({
-        success: true,
-        documentId,
-      });
-    } catch (error: unknown) {
-      setSubmissionResult({
-        success: false,
-        error: error instanceof Error ? error.message : 'Submission failed',
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const resetForm = () => {
-    setSubmissionResult(null);
-    window.location.reload();
-  };
-
-  if (submissionResult?.success) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
-          <div className="text-6xl mb-4">✅</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">
-            Submission Successful!
-          </h1>
-          <p className="text-gray-600 mb-6">
-            Your clearance request has been submitted successfully.
-          </p>
-          <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6">
-            <p className="text-sm font-medium text-blue-800">
-              Document ID:
-            </p>
-            <p className="text-sm text-blue-600 font-mono">
-              {submissionResult.documentId}
-            </p>
-            <p className="text-xs text-blue-600 mt-2">
-              Please save this ID for tracking your submission
-            </p>
-          </div>
-          <div className="space-y-3">
-            <a
-              href="/track"
-              className="w-full bg-primary hover:bg-primary/80 text-white font-medium py-3 px-4 rounded-md transition-colors inline-block"
-            >
-              Track This Submission
-            </a>
-            <button
-              onClick={resetForm}
-              className="w-full bg-primary hover:bg-primary/80 text-white font-medium py-3 px-4 rounded-md transition-colors"
-            >
-              Submit Another Request
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (submissionResult?.error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 sm:p-6">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-6 sm:p-8 text-center">
-          <div className="text-6xl mb-4">❌</div>
-          <h1 className="text-2xl font-bold text-foreground mb-4">
-            Submission Failed
-          </h1>
-          <p className="text-gray-600 mb-6">
-            {submissionResult.error}
-          </p>
-          <button
-            onClick={resetForm}
-            className="w-full bg-primary hover:bg-primary/80 text-white font-medium py-3 px-4 rounded-md transition-colors"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-    return (
+  return (
     <div className="min-h-screen bg-gray-50">
       <Navigation currentPage="home" showAdminLink={false} />
-      <main>
-        <StudentForm onSubmit={handleSubmit} isSubmitting={isSubmitting} />
+
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="text-center mb-10">
+          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
+            CPRINT Student Clearance Submission
+          </h1>
+          <p className="text-gray-600 max-w-2xl mx-auto">
+            Select your academic level to continue with the correct clearance
+            submission form.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-white rounded-lg shadow-md border border-gray-100 p-6">
+            <h2 className="text-2xl font-semibold text-gray-900 mb-3">
+              Undergraduate
+            </h2>
+            <p className="text-gray-600 mb-6">
+              For undergraduate students submitting their clearance
+              requirements.
+            </p>
+            <Link
+              href="/undergraduate"
+              className="inline-block w-full text-center bg-primary hover:bg-primary/80 text-white font-medium py-3 px-4 rounded-md transition-colors"
+            >
+              Go to Undergraduate Form
+            </Link>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md border border-gray-100 p-6">
+            <h2 className="text-2xl font-semibold text-gray-900 mb-3">
+              Graduate
+            </h2>
+            <p className="text-gray-600 mb-6">
+              For graduate students submitting dissertation, thesis, capstone,
+              or non-thesis clearance requirements.
+            </p>
+            <Link
+              href="/graduate"
+              className="inline-block w-full text-center bg-primary hover:bg-primary/80 text-white font-medium py-3 px-4 rounded-md transition-colors"
+            >
+              Go to Graduate Form
+            </Link>
+          </div>
+        </div>
+
+        <div className="text-center mt-8">
+          <Link
+            href="/track"
+            className="text-primary hover:text-primary/80 font-medium"
+          >
+            Already submitted? Track your submission here.
+          </Link>
+          <p className="mt-3">
+            <Link
+              href="/coordinators"
+              className="text-primary hover:text-primary/80 font-medium"
+            >
+              Coordinators: Check submission by name or student ID.
+            </Link>
+          </p>
+        </div>
       </main>
     </div>
   );

@@ -5,6 +5,7 @@ import {
   getDoc,
   setDoc,
   updateDoc, 
+  deleteDoc,
   query, 
   where, 
   orderBy,
@@ -28,6 +29,82 @@ import JSZip from 'jszip';
 import { db, storage, auth } from '@/lib/firebase';
 import { Student, StudentFormData, FilterOptions } from '@/types';
 import { generateDocumentId } from '@/utils/documentId';
+import {
+  UndergradParticipantKey,
+  setUndergradAllParticipantsState,
+  updateUndergradParticipantState,
+} from '@/utils/undergradClearance';
+
+type LegacyDocumentKey = keyof NonNullable<StudentFormData["documents"]>;
+
+function addDuplicateSuffix(fileName: string, sequence: number): string {
+  const dotIndex = fileName.lastIndexOf('.');
+  if (dotIndex <= 0) {
+    return `${fileName} (${sequence})`;
+  }
+
+  const base = fileName.slice(0, dotIndex);
+  const extension = fileName.slice(dotIndex);
+  return `${base} (${sequence})${extension}`;
+}
+
+function getUniqueZipFileName(fileName: string, usedNames: Set<string>): string {
+  const safeName = fileName.trim() || 'file';
+  let candidate = safeName;
+  let sequence = 2;
+
+  while (usedNames.has(candidate.toLowerCase())) {
+    candidate = addDuplicateSuffix(safeName, sequence);
+    sequence += 1;
+  }
+
+  usedNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function getLegacyZipFileName(key: LegacyDocumentKey, file: File): string {
+  const fileExtension = file.name.includes('.')
+    ? file.name.split('.').pop() ?? ''
+    : '';
+  const extensionSuffix = fileExtension ? `.${fileExtension}` : '';
+
+  switch (key) {
+    case 'approvalSheet':
+      return `approval_sheet${extensionSuffix}`;
+    case 'fullPaper':
+      return `full_paper${extensionSuffix}`;
+    case 'longAbstract':
+      return `long_abstract${extensionSuffix}`;
+    case 'journalFormat':
+      return `journal_format${extensionSuffix}`;
+    case 'graduationPicture':
+      return `graduation_picture${extensionSuffix}`;
+    default:
+      return `${key}${extensionSuffix}`;
+  }
+}
+
+function toDate(value: unknown): Date | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  if (typeof value === 'object' && value !== null && 'toDate' in value) {
+    const timestampLike = value as { toDate?: () => Date };
+    return timestampLike.toDate?.();
+  }
+  return undefined;
+}
+
+function mapSubmissionData(submissionId: string, data: Record<string, unknown>): Student {
+  const baseData = data as unknown as Student;
+  return {
+    ...baseData,
+    id: submissionId,
+    submittedAt: toDate(data.submittedAt) ?? new Date(),
+    updatedAt: toDate(data.updatedAt),
+    exportedAt: toDate(data.exportedAt),
+    exportLink: (data.exportLink as string | undefined) || undefined,
+  };
+}
 
 /**
  * Submit a new student clearance request
@@ -39,42 +116,43 @@ export async function submitStudentClearance(formData: StudentFormData): Promise
     
     // Create ZIP file containing all documents
     const zip = new JSZip();
-    
-    if (formData.documents) {
-      // Add each document to the ZIP with proper naming
-      const documentPromises = Object.entries(formData.documents).map(async ([key, file]) => {
-        if (file) {
-          const fileExtension = file.name.split('.').pop();
-          let fileName = '';
-          
-          // Use standardized file names in the ZIP
-          switch (key) {
-            case 'approvalSheet':
-              fileName = `approval_sheet.${fileExtension}`;
-              break;
-            case 'fullPaper':
-              fileName = `full_paper.${fileExtension}`;
-              break;
-            case 'longAbstract':
-              fileName = `long_abstract.${fileExtension}`;
-              break;
-            case 'journalFormat':
-              fileName = `journal_format.${fileExtension}`;
-              break;
-            case 'graduationPicture':
-              fileName = `graduation_picture.${fileExtension}`;
-              break;
-            default:
-              fileName = `${key}.${fileExtension}`;
-          }
-          
-          // Convert file to array buffer and add to ZIP
-          const arrayBuffer = await file.arrayBuffer();
-          zip.file(fileName, arrayBuffer);
-        }
-      });
+    const fileList: string[] = [];
 
-      await Promise.all(documentPromises);
+    const uploadedFiles = formData.uploadedFiles ?? [];
+    const legacyDocuments = formData.documents;
+    const hasLegacyFiles = Boolean(
+      legacyDocuments &&
+      Object.values(legacyDocuments).some((file) => Boolean(file))
+    );
+
+    if (uploadedFiles.length === 0 && !hasLegacyFiles) {
+      throw new Error('At least one file is required for submission.');
+    }
+
+    if (uploadedFiles.length > 0) {
+      const usedNames = new Set<string>();
+      const uploadPromises = uploadedFiles.map(async (file) => {
+        const uniqueFileName = getUniqueZipFileName(file.name, usedNames);
+        fileList.push(uniqueFileName);
+        const arrayBuffer = await file.arrayBuffer();
+        zip.file(uniqueFileName, arrayBuffer);
+      });
+      await Promise.all(uploadPromises);
+    } else if (legacyDocuments) {
+      const legacyPromises = Object.entries(legacyDocuments).map(
+        async ([key, file]) => {
+          if (!file) return;
+
+          const legacyFileName = getLegacyZipFileName(
+            key as LegacyDocumentKey,
+            file
+          );
+          fileList.push(legacyFileName);
+          const arrayBuffer = await file.arrayBuffer();
+          zip.file(legacyFileName, arrayBuffer);
+        }
+      );
+      await Promise.all(legacyPromises);
     }
 
     // Generate ZIP file as blob
@@ -100,16 +178,23 @@ export async function submitStudentClearance(formData: StudentFormData): Promise
       graduationYear: formData.graduationYear,
       researchTitle: formData.researchTitle,
       researchType: formData.researchType,
+      fileList,
       zipFile: zipDownloadURL,
       status: 'Submitted',
       submittedAt: Timestamp.fromDate(new Date()),
     };
 
-    // Only include groupMembers if it exists and has valid data (for undergrad)
+    // Only include groupMembers if it exists and has at least one non-empty field (for undergrad).
+    // This keeps members visible even when student ID is not provided.
     if (formData.level === 'undergrad' && formData.groupMembers && formData.groupMembers.length > 0) {
-      const validGroupMembers = formData.groupMembers.filter(
-        member => member.name.trim() && member.studentID.trim()
-      );
+      const validGroupMembers = formData.groupMembers
+        .map((member) => ({
+          ...member,
+          name: member.name.trim(),
+          studentID: member.studentID.trim(),
+        }))
+        .filter((member) => member.name || member.studentID);
+
       if (validGroupMembers.length > 0) {
         submissionData.groupMembers = validGroupMembers;
       }
@@ -135,12 +220,8 @@ export async function getSubmissionById(submissionId: string): Promise<Student |
     const docSnap = await getDoc(docRef);
     
     if (docSnap.exists()) {
-      const data = docSnap.data();
-      return {
-        ...data,
-        id: docSnap.id,
-        submittedAt: data.submittedAt?.toDate() || new Date(),
-      } as Student;
+      const data = docSnap.data() as Record<string, unknown>;
+      return mapSubmissionData(docSnap.id, data);
     } else {
       return null;
     }
@@ -160,16 +241,8 @@ export async function getAllSubmissions(filters?: FilterOptions): Promise<Studen
     // Apply filters
     const constraints = [];
     
-    if (filters?.level && filters.level !== 'all') {
-      constraints.push(where('level', '==', filters.level));
-    }
-    
-    if (filters?.status && filters.status !== 'all') {
-      constraints.push(where('status', '==', filters.status));
-    }
-    
-    if (filters?.course) {
-      constraints.push(where('course', '==', filters.course));
+    if (filters?.researchType && filters.researchType !== 'all') {
+      constraints.push(where('researchType', '==', filters.researchType));
     }
 
     // Add ordering
@@ -177,14 +250,9 @@ export async function getAllSubmissions(filters?: FilterOptions): Promise<Studen
 
     const querySnapshot = await getDocs(query(q, ...constraints));
     
-    let submissions = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        ...data,
-        id: doc.id, // This will now be our custom SPUP_Clearance_YYYY_ABC123 format
-        submittedAt: data.submittedAt?.toDate() || new Date(),
-        exportLink: data.exportLink || undefined,
-      } as Student;
+    let submissions = querySnapshot.docs.map((submissionDoc) => {
+      const data = submissionDoc.data() as Record<string, unknown>;
+      return mapSubmissionData(submissionDoc.id, data);
     });
 
     // Apply search filter if provided
@@ -214,7 +282,10 @@ export async function updateSubmissionStatus(
 ): Promise<void> {
   try {
     const docRef = doc(db, 'submissions', submissionId);
-    await updateDoc(docRef, { status });
+    await updateDoc(docRef, {
+      status,
+      updatedAt: Timestamp.now(),
+    });
   } catch (error) {
     console.error('Error updating submission status:', error);
     throw new Error('Failed to update submission status');
@@ -233,7 +304,7 @@ export async function updateSubmissionDetails(
     
     // Remove undefined fields and add timestamp
     const cleanUpdates = Object.fromEntries(
-      Object.entries(updates).filter(([_, value]) => value !== undefined)
+      Object.entries(updates).filter(([, value]) => value !== undefined)
     );
     
     await updateDoc(docRef, { 
@@ -243,6 +314,92 @@ export async function updateSubmissionDetails(
   } catch (error) {
     console.error('Error updating submission details:', error);
     throw new Error('Failed to update submission details');
+  }
+}
+
+/**
+ * Update a single undergrad participant clearance state (leader or member).
+ * Old records without clearance fields are supported via fallback derived from status.
+ */
+export async function updateUndergradParticipantClearance(
+  submissionId: string,
+  participantKey: UndergradParticipantKey,
+  isCleared: boolean
+): Promise<void> {
+  try {
+    const submissionRef = doc(db, 'submissions', submissionId);
+    const submissionDoc = await getDoc(submissionRef);
+
+    if (!submissionDoc.exists()) {
+      throw new Error('Submission not found');
+    }
+
+    const mappedSubmission = mapSubmissionData(
+      submissionDoc.id,
+      submissionDoc.data() as Record<string, unknown>
+    );
+
+    if (mappedSubmission.level !== 'undergrad') {
+      throw new Error('Participant clearance is only available for undergraduate submissions');
+    }
+
+    const nextClearanceState = updateUndergradParticipantState(
+      mappedSubmission,
+      participantKey,
+      isCleared
+    );
+
+    await updateDoc(submissionRef, {
+      leaderCleared: nextClearanceState.leaderCleared,
+      groupMembers: nextClearanceState.groupMembers,
+      status: nextClearanceState.status,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error('Error updating undergrad participant clearance:', error);
+    throw new Error('Failed to update participant clearance');
+  }
+}
+
+/**
+ * Set clear state for all undergrad participants (leader + members).
+ * Old records without clearance fields are supported via fallback derived from status.
+ */
+export async function setUndergradAllClear(
+  submissionId: string,
+  isCleared: boolean = true
+): Promise<void> {
+  try {
+    const submissionRef = doc(db, 'submissions', submissionId);
+    const submissionDoc = await getDoc(submissionRef);
+
+    if (!submissionDoc.exists()) {
+      throw new Error('Submission not found');
+    }
+
+    const mappedSubmission = mapSubmissionData(
+      submissionDoc.id,
+      submissionDoc.data() as Record<string, unknown>
+    );
+
+    if (mappedSubmission.level !== 'undergrad') {
+      throw new Error('All clear is only available for undergraduate submissions');
+    }
+
+    const nextClearanceState = setUndergradAllParticipantsState(
+      mappedSubmission,
+      isCleared
+    );
+
+    await updateDoc(submissionRef, {
+      leaderCleared: nextClearanceState.leaderCleared,
+      groupMembers: nextClearanceState.groupMembers,
+      status: nextClearanceState.status,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error('Error setting undergrad all clear state:', error);
+    throw new Error('Failed to update all-clear state');
   }
 }
 
@@ -316,7 +473,8 @@ export async function markSubmissionAsExported(
     // Update submission metadata
     await updateDoc(submissionRef, {
       isExported: true,
-      exportedAt: Timestamp.now()
+      exportedAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
     });
 
     // Optionally delete file from Firebase Storage
@@ -398,11 +556,14 @@ export async function getSubmissionsForExport(): Promise<Student[]> {
           researchTitle: data.researchTitle,
           researchType: data.researchType,
           groupMembers: data.groupMembers,
+          fileList: data.fileList,
+          leaderCleared: data.leaderCleared,
           zipFile: data.zipFile,
           status: data.status,
-          submittedAt: data.submittedAt.toDate(),
+          submittedAt: toDate(data.submittedAt) || new Date(),
+          updatedAt: toDate(data.updatedAt),
           isExported: data.isExported || false,
-          exportedAt: data.exportedAt?.toDate(),
+          exportedAt: toDate(data.exportedAt),
           exportLink: data.exportLink || undefined
         });
       }
@@ -424,7 +585,10 @@ export async function getSubmissionsForExport(): Promise<Student[]> {
 export async function clearSubmissionExportLink(submissionId: string): Promise<void> {
   try {
     const submissionRef = doc(db, 'submissions', submissionId);
-    await updateDoc(submissionRef, { exportLink: deleteField() });
+    await updateDoc(submissionRef, {
+      exportLink: deleteField(),
+      updatedAt: Timestamp.now(),
+    });
   } catch (error) {
     console.error('Error clearing export link:', error);
     throw new Error('Failed to clear export link');
@@ -437,9 +601,48 @@ export async function clearSubmissionExportLink(submissionId: string): Promise<v
 export async function setSubmissionExportLink(submissionId: string, exportLink: string): Promise<void> {
   try {
     const submissionRef = doc(db, 'submissions', submissionId);
-    await updateDoc(submissionRef, { exportLink });
+    await updateDoc(submissionRef, {
+      exportLink,
+      updatedAt: Timestamp.now(),
+    });
   } catch (error) {
     console.error('Error setting export link:', error);
     throw new Error('Failed to set export link');
+  }
+}
+
+/**
+ * Delete a submission and its associated files (admin only)
+ */
+export async function deleteSubmission(submissionId: string): Promise<void> {
+  try {
+    // Get submission data to find the filename
+    const submissionRef = doc(db, 'submissions', submissionId);
+    const submissionDoc = await getDoc(submissionRef);
+    
+    if (!submissionDoc.exists()) {
+      throw new Error('Submission not found');
+    }
+    
+    const data = submissionDoc.data();
+    
+    // Delete file from Firebase Storage if it exists
+    try {
+      const studentName = data.name;
+      const sanitizedName = studentName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+      const fileName = `${sanitizedName}_${submissionId}.zip`;
+      const fileRef = ref(storage, `submissions/${fileName}`);
+      await deleteObject(fileRef);
+      console.log(`Deleted file: ${fileName}`);
+    } catch (error) {
+      console.warn(`Failed to delete file for ${submissionId}:`, error);
+      // Continue with document deletion even if file deletion fails
+    }
+    
+    // Delete the document from Firestore
+    await deleteDoc(submissionRef);
+  } catch (error) {
+    console.error('Error deleting submission:', error);
+    throw new Error('Failed to delete submission');
   }
 }

@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from "react";
 import { StudentFormData, Level, ResearchType } from "@/types";
-import { DocumentUpload } from "./DocumentUpload";
+import { MultiFileUpload } from "./MultiFileUpload";
 import { Label } from "@/components/ui/label";
+import { getDocumentInstructionsForLevel } from "@/constants/documentInstructions";
 import {
   Select,
   SelectContent,
@@ -15,11 +16,24 @@ import {
 interface StudentFormProps {
   onSubmit: (formData: StudentFormData) => void;
   isSubmitting: boolean;
+  fixedLevel: Level;
+  lockLevel?: boolean;
+  fixedResearchType?: ResearchType;
+  hideResearchType?: boolean;
+  hideAcademicInformation?: boolean;
 }
 
-export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
+export function StudentForm({
+  onSubmit,
+  isSubmitting,
+  fixedLevel,
+  lockLevel = false,
+  fixedResearchType,
+  hideResearchType = false,
+  hideAcademicInformation = false,
+}: StudentFormProps) {
   const [formData, setFormData] = useState<StudentFormData>({
-    level: "undergrad",
+    level: fixedLevel,
     name: "",
     email: "",
     studentId: "",
@@ -28,47 +42,38 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
     graduationMonth: "",
     graduationYear: "",
     researchTitle: "",
-    researchType: "Thesis" as ResearchType,
+    researchType: fixedResearchType ?? ("Thesis" as ResearchType),
     groupMembers: [{ name: "", studentID: "" }],
-    documents: {
-      approvalSheet: null,
-      fullPaper: null,
-      longAbstract: null,
-      journalFormat: null,
-      graduationPicture: null,
-    },
+    uploadedFiles: [],
   });
 
-  const [documentErrors, setDocumentErrors] = useState<Record<string, string>>(
-    {}
-  );
+  const [uploadError, setUploadError] = useState("");
+
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      level: fixedLevel,
+    }));
+  }, [fixedLevel]);
+
+  useEffect(() => {
+    if (!fixedResearchType) return;
+
+    setFormData((prev) => ({
+      ...prev,
+      researchType: fixedResearchType,
+    }));
+  }, [fixedResearchType]);
 
   // Clear research-related fields when switching to Non-Thesis
   useEffect(() => {
-    if (formData.researchType === ('Non-Thesis' as ResearchType)) {
+    if (formData.researchType === ("Non-Thesis" as ResearchType)) {
       setFormData(prev => ({
         ...prev,
-        adviser: '',
-        researchTitle: '',
-        groupMembers: [{ name: "", studentID: "" }], // Reset group members to default
-        documents: {
-          ...prev.documents,
-          approvalSheet: null,
-          fullPaper: null,
-          longAbstract: null,
-          journalFormat: null,
-        }
+        adviser: "",
+        researchTitle: "",
+        groupMembers: [{ name: "", studentID: "" }],
       }));
-      
-      // Clear related document errors
-      setDocumentErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.approvalSheet;
-        delete newErrors.fullPaper;
-        delete newErrors.longAbstract;
-        delete newErrors.journalFormat;
-        return newErrors;
-      });
     }
   }, [formData.researchType]);
 
@@ -76,6 +81,13 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
     field: keyof StudentFormData,
     value: string | Level | ResearchType
   ) => {
+    if (field === "level" && lockLevel) {
+      return;
+    }
+    if (field === "researchType" && fixedResearchType) {
+      return;
+    }
+
     setFormData((prev) => ({
       ...prev,
       [field]: value,
@@ -108,52 +120,24 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
     }
   };
 
-  const handleDocumentChange = (
-    documentType: keyof StudentFormData["documents"],
-    file: File | null
-  ) => {
+  const handleFilesChange = (files: File[]) => {
     setFormData((prev) => ({
       ...prev,
-      documents: {
-        ...prev.documents,
-        [documentType]: file,
-      },
+      uploadedFiles: files,
     }));
 
-    // Clear any error for this document type
-    if (file) {
-      setDocumentErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[documentType];
-        return newErrors;
-      });
+    if (files.length > 0) {
+      setUploadError("");
     }
   };
 
   const validateForm = (): boolean => {
-    const errors: Record<string, string> = {};
-
-    // Check required documents based on research type
-    if (formData.researchType === ('Non-Thesis' as ResearchType)) {
-      // For Non-Thesis, only graduation picture is required (if we want it required)
-      // Currently making it optional as per requirement
-      // No research documents required for Non-Thesis
-    } else {
-      // For research types, require research documents
-      const requiredDocs = [
-        "approvalSheet",
-        "fullPaper",
-        "longAbstract",
-      ] as const;
-      requiredDocs.forEach((docType) => {
-        if (!formData.documents[docType]) {
-          errors[docType] = "This document is required";
-        }
-      });
+    if (formData.uploadedFiles.length === 0) {
+      setUploadError("Please upload at least one file.");
+      return false;
     }
-
-    setDocumentErrors(errors);
-    return Object.keys(errors).length === 0;
+    setUploadError("");
+    return true;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -166,91 +150,105 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
     onSubmit(formData);
   };
 
+  const documentInstructions = getDocumentInstructionsForLevel(formData.level);
+
   return (
     <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 lg:p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">
-              Student Clearance Submission
+          <div className="text-center mb-6 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3 sm:mb-4">
+              CPRINT Student Clearance Submission
             </h1>
-            <p className="text-gray-600">
+            <p className="text-sm sm:text-base text-gray-600 px-2 sm:px-0">
               Please fill out all required fields and upload the necessary
               documents for your clearance request.
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-8">
+          <form onSubmit={handleSubmit} className="space-y-6 sm:space-y-8">
             {/* Level and Research Type Selection */}
-            <div className="border-b border-gray-200 pb-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                Academic Information
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label
-                    htmlFor="level"
-                    className="text-sm font-medium text-gray-700 mb-1 block"
-                  >
-                    Academic Level *
-                  </Label>
-                  <Select
-                    value={formData.level}
-                    onValueChange={(value: Level) =>
-                      handleInputChange("level", value)
-                    }
-                  >
-                    <SelectTrigger id="level" className="w-full">
-                      <SelectValue placeholder="Choose level" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="undergrad">Undergraduate</SelectItem>
-                      <SelectItem value="grad">Graduate</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            {!hideAcademicInformation && (
+              <div className="border-b border-gray-200 pb-6">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">
+                  Academic Information
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <Label
+                      htmlFor="level"
+                      className="text-sm font-medium text-gray-700 mb-1 block"
+                    >
+                      Academic Level *
+                    </Label>
+                    <Select
+                      value={formData.level}
+                      onValueChange={(value: Level) =>
+                        handleInputChange("level", value)
+                      }
+                      disabled={lockLevel}
+                    >
+                      <SelectTrigger id="level" className="w-full">
+                        <SelectValue placeholder="Choose level" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="undergrad">Undergraduate</SelectItem>
+                        <SelectItem value="grad">Graduate</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {lockLevel && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Academic level is fixed for this page.
+                      </p>
+                    )}
+                  </div>
 
-                <div>
-                  <label
-                    htmlFor="researchType"
-                    className="block text-sm font-medium text-gray-700 mb-2"
-                  >
-                    Research Type *
-                  </label>
-                  <select
-                    id="researchType"
-                    required
-                    value={formData.researchType}
-                    onChange={(e) =>
-                      handleInputChange(
-                        "researchType",
-                        e.target.value as ResearchType
-                      )
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  >
-                    <option value="Thesis">Thesis</option>
-                    <option value="Capstone">Capstone</option>
-                    <option value="Dissertation">Dissertation</option>
-                    <option value="Non-Thesis">Non-Thesis</option>
-                  </select>
+                  {!hideResearchType && (
+                    <div>
+                      <label
+                        htmlFor="researchType"
+                        className="block text-sm font-medium text-gray-700 mb-2"
+                      >
+                        Research Type *
+                      </label>
+                      <select
+                        id="researchType"
+                        required
+                        value={formData.researchType}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "researchType",
+                            e.target.value as ResearchType
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      >
+                        <option value="Thesis">Thesis</option>
+                        <option value="Capstone">Capstone</option>
+                        <option value="Dissertation">Dissertation</option>
+                        <option value="Non-Thesis">Non-Thesis</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Basic Information */}
-            <div className="space-y-6">
-              <h2 className="text-xl font-semibold text-gray-900">
+            <div className="space-y-4 sm:space-y-6">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
                 Basic Information
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div>
                   <label
                     htmlFor="name"
                     className="block text-sm font-medium text-gray-700 mb-2"
                   >
-                    Full Name *
+                    {formData.level === "undergrad"
+                      ? "Leader Name (First Name Middle Initial Last Name)*"
+                      : "Full Name (First Name Middle Initial Last Name)*"}
                   </label>
                   <input
                     id="name"
@@ -258,8 +256,12 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                     required
                     value={formData.name}
                     onChange={(e) => handleInputChange("name", e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Enter your full name"
+                    className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base"
+                    placeholder={
+                      formData.level === "undergrad"
+                        ? "Enter leader name"
+                        : "Enter your full name"
+                    }
                   />
                 </div>
 
@@ -276,7 +278,7 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                     required
                     value={formData.email}
                     onChange={(e) => handleInputChange("email", e.target.value)}
-                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                    className={`w-full px-3 py-2.5 sm:py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base ${
                       formData.email && !formData.email.includes("@")
                         ? "border-red-500"
                         : "border-gray-300"
@@ -300,7 +302,7 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                     onChange={(e) =>
                       handleInputChange("studentId", e.target.value)
                     }
-                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                    className={`w-full px-3 py-2.5 sm:py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base ${
                       formData.studentId && formData.studentId.length < 4
                         ? "border-red-500"
                         : "border-gray-300"
@@ -323,7 +325,7 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                     onChange={(e) =>
                       handleInputChange("course", e.target.value)
                     }
-                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                    className={`w-full px-3 py-2.5 sm:py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base ${
                       formData.course && formData.course.length < 2
                         ? "border-red-500"
                         : "border-gray-300"
@@ -332,131 +334,133 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                   />
                 </div>
                 {formData.researchType !== ('Non-Thesis' as ResearchType) && (
+                  <>
+                  
                   <div>
-                    <label
-                      htmlFor="adviser"
-                      className="block text-sm font-medium text-gray-700 mb-2"
-                    >
-                      Research Adviser *
-                    </label>
-                    <input
-                      id="adviser"
-                      type="text"
-                      required={formData.researchType !== ('Non-Thesis' as ResearchType)}
-                      value={formData.adviser}
-                      onChange={(e) =>
-                        handleInputChange("adviser", e.target.value)
-                      }
-                      className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                        formData.researchType !== ('Non-Thesis' as ResearchType) && formData.adviser && formData.adviser.length < 2
-                          ? "border-red-500"
-                          : "border-gray-300"
-                      }`}
-                      placeholder="Enter your adviser's name"
-                    />
-                  </div>
+                      <label
+                        htmlFor="researchTitle"
+                        className="block text-sm font-medium text-gray-700 mb-2"
+                      >
+                        Research Title *
+                      </label>
+                      <input
+                        id="researchTitle"
+                        type="text"
+                        required={formData.researchType !== ('Non-Thesis' as ResearchType)}
+                        value={formData.researchTitle}
+                        onChange={(e) =>
+                          handleInputChange("researchTitle", e.target.value)
+                        }
+                        className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base"
+                        placeholder="Enter your research title"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="adviser"
+                        className="block text-sm font-medium text-gray-700 mb-2"
+                      >
+                        Research Adviser *
+                      </label>
+                      <input
+                        id="adviser"
+                        type="text"
+                        required={formData.researchType !== ('Non-Thesis' as ResearchType)}
+                        value={formData.adviser}
+                        onChange={(e) =>
+                          handleInputChange("adviser", e.target.value)
+                        }
+                        className={`w-full px-3 py-2.5 sm:py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base ${
+                          formData.researchType !== ('Non-Thesis' as ResearchType) && formData.adviser && formData.adviser.length < 2
+                            ? "border-red-500"
+                            : "border-gray-300"
+                        }`}
+                        placeholder="Enter your adviser's name"
+                      />
+                    </div>
+
+                  </>
                 )}
 
-                
+                {/* Graduation Date - Mobile Responsive */}
+                <div className="col-span-1 sm:col-span-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label
+                        htmlFor="graduationMonth"
+                        className="block text-sm font-medium text-gray-700 mb-2"
+                      >
+                        Graduation Month *
+                      </label>
+                      <select
+                        id="graduationMonth"
+                        required
+                        value={formData.graduationMonth}
+                        onChange={(e) =>
+                          handleInputChange("graduationMonth", e.target.value)
+                        }
+                        className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base"
+                      >
+                        <option value="">Select Month</option>
+                        <option value="January">January</option>
+                        <option value="February">February</option>
+                        <option value="March">March</option>
+                        <option value="April">April</option>
+                        <option value="May">May</option>
+                        <option value="June">June</option>
+                        <option value="July">July</option>
+                        <option value="August">August</option>
+                        <option value="September">September</option>
+                        <option value="October">October</option>
+                        <option value="November">November</option>
+                        <option value="December">December</option>
+                      </select>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label
-                      htmlFor="graduationMonth"
-                      className="block text-sm font-medium text-gray-700 mb-2"
-                    >
-                      Graduation Month *
-                    </label>
-                    <select
-                      id="graduationMonth"
-                      required
-                      value={formData.graduationMonth}
-                      onChange={(e) =>
-                        handleInputChange("graduationMonth", e.target.value)
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    >
-                      <option value="">Select Month</option>
-                      <option value="January">January</option>
-                      <option value="February">February</option>
-                      <option value="March">March</option>
-                      <option value="April">April</option>
-                      <option value="May">May</option>
-                      <option value="June">June</option>
-                      <option value="July">July</option>
-                      <option value="August">August</option>
-                      <option value="September">September</option>
-                      <option value="October">October</option>
-                      <option value="November">November</option>
-                      <option value="December">December</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="graduationYear"
-                      className="block text-sm font-medium text-gray-700 mb-2"
-                    >
-                      Graduation Year *
-                    </label>
-                    <select
-                      id="graduationYear"
-                      required
-                      value={formData.graduationYear}
-                      onChange={(e) =>
-                        handleInputChange("graduationYear", e.target.value)
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    >
-                      <option value="">Select Year</option>
-                      {Array.from({ length: 16 }, (_, i) => {
-                        const currentYear = new Date().getFullYear();
-                        const year = currentYear - 10 + i; // Start from 10 years ago
-                        return (
-                          <option key={year} value={year}>
-                            {year}
-                          </option>
-                        );
-                      })}
-                    </select>
+                    <div>
+                      <label
+                        htmlFor="graduationYear"
+                        className="block text-sm font-medium text-gray-700 mb-2"
+                      >
+                        Graduation Year *
+                      </label>
+                      <select
+                        id="graduationYear"
+                        required
+                        value={formData.graduationYear}
+                        onChange={(e) =>
+                          handleInputChange("graduationYear", e.target.value)
+                        }
+                        className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base"
+                      >
+                        <option value="">Select Year</option>
+                        {Array.from({ length: 16 }, (_, i) => {
+                          const currentYear = new Date().getFullYear();
+                          const year = currentYear - 10 + i; // Start from 10 years ago
+                          return (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
                   </div>
                 </div>
-
-                {formData.researchType !== ('Non-Thesis' as ResearchType) && (
-                  <div className="col-span-2">
-                    <label
-                      htmlFor="researchTitle"
-                      className="block text-sm font-medium text-gray-700 mb-2"
-                    >
-                      Research Title *
-                    </label>
-                    <input
-                      id="researchTitle"
-                      type="text"
-                      required={formData.researchType !== ('Non-Thesis' as ResearchType)}
-                      value={formData.researchTitle}
-                      onChange={(e) =>
-                        handleInputChange("researchTitle", e.target.value)
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      placeholder="Enter your research title"
-                    />
-                  </div>
-                )}
               </div>
             </div>
 
             {/* Group Members (Undergraduate only and not Non-Thesis) */}
             {formData.level === "undergrad" && formData.researchType !== ('Non-Thesis' as ResearchType) && (
               <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-gray-900">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
                     Group Members
                   </h2>
                   <button
                     type="button"
                     onClick={addGroupMember}
-                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded-md text-sm font-medium transition-colors"
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md text-sm font-medium transition-colors w-full sm:w-auto"
                   >
                     + Add Member
                   </button>
@@ -465,26 +469,26 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                 {formData.groupMembers.map((member, index) => (
                   <div
                     key={index}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-gray-200 rounded-md"
+                    className="space-y-4 p-4 border border-gray-200 rounded-md"
                   >
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Member {index + 1} Name
-                      </label>
-                      <input
-                        type="text"
-                        value={member.name}
-                        onChange={(e) =>
-                          handleGroupMemberChange(index, "name", e.target.value)
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                        placeholder="Enter member name"
-                      />
-                    </div>
-                    <div className="flex flex-col sm:flex-row sm:items-end space-y-2 sm:space-y-0 sm:space-x-2">
-                      <div className="flex-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Student ID
+                          Member {index + 1} Name
+                        </label>
+                        <input
+                          type="text"
+                          value={member.name}
+                          onChange={(e) =>
+                            handleGroupMemberChange(index, "name", e.target.value)
+                          }
+                          className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base"
+                          placeholder="Enter member name"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Student ID (optional)
                         </label>
                         <input
                           type="text"
@@ -496,109 +500,78 @@ export function StudentForm({ onSubmit, isSubmitting }: StudentFormProps) {
                               e.target.value
                             )
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          className="w-full px-3 py-2.5 sm:py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base"
                           placeholder="Enter student ID"
                         />
                       </div>
-                      {formData.groupMembers.length > 1 && (
+                    </div>
+                    {formData.groupMembers.length > 1 && (
+                      <div className="flex justify-end">
                         <button
                           type="button"
                           onClick={() => removeGroupMember(index)}
-                          className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                          className="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-md text-sm font-medium transition-colors"
                         >
-                          Remove
+                          Remove Member
                         </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             )}
 
             {/* Document Uploads */}
-            <div className="space-y-2">
-              <h2 className="text-xl font-semibold text-gray-900">
-                {formData.researchType === ('Non-Thesis' as ResearchType) ? 'Documents' : 'Required Documents'}
+            <div className="space-y-4">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
+                Document Submission Instructions
               </h2>
               <p className="text-sm text-gray-600">
-                {formData.researchType === ('Non-Thesis' as ResearchType) 
-                  ? 'Please upload your graduation picture (optional). If not available, submit a high definition 2x2 picture.'
-                  : 'Please upload all required documents. All file types are accepted.'
-                }
+                Upload all applicable files in one submission. Document checks are
+                instruction-based, so include every file relevant to your case.
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {formData.researchType === ('Non-Thesis' as ResearchType) ? (
-                  // For Non-Thesis: Only show graduation picture upload
-                  <DocumentUpload
-                    label="Graduation Picture (Optional)"
-                    accept="image/*"
-                    description="Upload your graduation picture in any image format. If graduation picture is not available, please submit a high definition 2x2 picture."
-                    file={formData.documents.graduationPicture}
-                    onFileChange={(file) =>
-                      handleDocumentChange("graduationPicture", file)
-                    }
-                    error={documentErrors.graduationPicture}
-                    isRequired={false}
-                  />
-                ) : (
-                  // For research types: Show all research documents
-                  <>
-                    <DocumentUpload
-                      label="Approval Sheet"
-                      accept="*"
-                      description="Upload the scanned approval sheet in any format."
-                      file={formData.documents.approvalSheet}
-                      onFileChange={(file) =>
-                        handleDocumentChange("approvalSheet", file)
-                      }
-                      error={documentErrors.approvalSheet}
-                    />
-
-                    <DocumentUpload
-                      label="Full Paper"
-                      accept="*"
-                      description="Upload the full paper in any format. The ethics clearance must be included in the appendix."
-                      file={formData.documents.fullPaper}
-                      onFileChange={(file) =>
-                        handleDocumentChange("fullPaper", file)
-                      }
-                      error={documentErrors.fullPaper}
-                    />
-
-                    <DocumentUpload
-                      label="Long Abstract"
-                      accept="*"
-                      description="Upload the long abstract in any format."
-                      file={formData.documents.longAbstract}
-                      onFileChange={(file) =>
-                        handleDocumentChange("longAbstract", file)
-                      }
-                      error={documentErrors.longAbstract}
-                    />
-
-                    <DocumentUpload
-                      label="Journal Format (Optional)"
-                      accept="*"
-                      description="Upload the journal in any format. This field is optional."
-                      file={formData.documents.journalFormat}
-                      onFileChange={(file) =>
-                        handleDocumentChange("journalFormat", file)
-                      }
-                      error={documentErrors.journalFormat}
-                      isRequired={false}
-                    />
-                  </>
-                )}
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <ul className="space-y-3">
+                  {documentInstructions.map((instruction, index) => (
+                    <li key={instruction.id} className="text-sm text-gray-800">
+                      <p>
+                        <span className="font-medium">{index + 1}. {instruction.title}</span>
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {instruction.description}
+                      </p>
+                      {(instruction.optional ||
+                        instruction.itOnly ||
+                        instruction.conditional) && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {[
+                            instruction.optional ? "Optional" : null,
+                            instruction.itOnly ? "Information Technology courses only" : null,
+                            instruction.conditional ?? null,
+                          ]
+                            .filter(Boolean)
+                            .join(" | ")}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
+
+              <MultiFileUpload
+                files={formData.uploadedFiles}
+                onFilesChange={handleFilesChange}
+                error={uploadError}
+              />
             </div>
 
             {/* Submit Button */}
-            <div className="">
+            <div className="pt-4">
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className={`w-full py-3 px-4 rounded-md text-white font-medium transition-colors ${
+                className={`w-full py-3 px-4 rounded-md text-white font-medium transition-colors text-base sm:text-lg ${
                   isSubmitting
                     ? "bg-gray-400 cursor-not-allowed"
                     : "bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-primary-500"

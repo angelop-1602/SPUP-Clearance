@@ -2,23 +2,23 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { User } from 'firebase/auth';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { LoginForm } from '@/components/admin/LoginForm';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { AdminTable } from '@/components/admin/AdminTable';
 import { SubmissionCard } from '@/components/admin/SubmissionCard';
 
-import { onAuthStateChange, getAllSubmissions } from '@/services/firebase';
+import { onAuthStateChange } from '@/services/firebase';
 import { toast } from 'sonner';
-import { Student, FilterOptions } from '@/types';
+import { Student } from '@/types';
+import { db } from '@/lib/firebase';
 
 export default function AdminPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [submissions, setSubmissions] = useState<Student[]>([]);
-  const [filteredSubmissions, setFilteredSubmissions] = useState<Student[]>([]);
   const [selectedSubmission, setSelectedSubmission] = useState<Student | null>(null);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
-  const [currentFilters, setCurrentFilters] = useState<FilterOptions>({});
 
 
   // Monitor authentication state
@@ -26,42 +26,63 @@ export default function AdminPage() {
     const unsubscribe = onAuthStateChange((user) => {
       setUser(user);
       setIsLoading(false);
-      
-      if (user) {
-        loadSubmissions();
-      }
     });
 
     return () => unsubscribe();
   }, []);
 
-  const loadSubmissions = async (filters?: FilterOptions) => {
-    setIsLoadingSubmissions(true);
-    try {
-      const data = await getAllSubmissions(filters);
-      setSubmissions(data);
-      setFilteredSubmissions(data);
-    } catch (error) {
-      console.error('Error loading submissions:', error);
-      toast.error('Failed to load submissions');
-    } finally {
+  // Realtime submissions listener
+  useEffect(() => {
+    if (!user) {
+      setSubmissions([]);
+      setSelectedSubmission(null);
       setIsLoadingSubmissions(false);
+      return;
     }
-  };
 
-  const handleFiltersChange = useCallback((filters: FilterOptions) => {
-    setCurrentFilters(filters);
-    // Only reload from server if level, course filters change
-    // Search and status filters are handled client-side for better performance
-    const { searchTerm, status, ...serverFilters } = filters;
-    const { searchTerm: currentSearch, status: currentStatus, ...currentServerFilters } = currentFilters;
-    
-    const needsServerReload = JSON.stringify(serverFilters) !== JSON.stringify(currentServerFilters);
-    
-    if (needsServerReload) {
-      loadSubmissions(serverFilters);
-    }
-  }, [currentFilters]);
+    setIsLoadingSubmissions(true);
+
+    const submissionsQuery = query(
+      collection(db, 'submissions'),
+      orderBy('submittedAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(
+      submissionsQuery,
+      (snapshot) => {
+        const realtimeSubmissions = snapshot.docs.map((submissionDoc) => {
+          const data = submissionDoc.data();
+          return {
+            ...data,
+            id: submissionDoc.id,
+            submittedAt: data.submittedAt?.toDate?.() || new Date(),
+            updatedAt: data.updatedAt?.toDate?.(),
+            exportedAt: data.exportedAt?.toDate?.(),
+            exportLink: data.exportLink || undefined,
+          } as Student;
+        });
+
+        setSubmissions(realtimeSubmissions);
+        setSelectedSubmission((previous) =>
+          previous
+            ? realtimeSubmissions.find((submission) => submission.id === previous.id) || null
+            : null
+        );
+        setIsLoadingSubmissions(false);
+      },
+      (error) => {
+        console.error('Realtime submissions listener error:', error);
+        toast.error('Failed to sync submissions in real time');
+        setIsLoadingSubmissions(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleFiltersChange = useCallback(() => {
+    // Filtering is fully handled client-side in AdminTable.
+  }, []);
 
   const handleViewSubmission = (submission: Student) => {
     setSelectedSubmission(submission);
@@ -72,8 +93,7 @@ export default function AdminPage() {
   };
 
   const handleSubmissionUpdate = () => {
-    // Reload submissions to reflect changes
-    loadSubmissions(currentFilters);
+    // Realtime listener handles updates automatically.
   };
 
   const handleLoginSuccess = (user: User) => {
@@ -83,7 +103,6 @@ export default function AdminPage() {
   const handleLogout = () => {
     setUser(null);
     setSubmissions([]);
-    setFilteredSubmissions([]);
     setSelectedSubmission(null);
   };
 
@@ -106,22 +125,14 @@ export default function AdminPage() {
 
   // Authenticated admin interface
   return (
-    <AdminLayout user={user} onLogout={handleLogout}>
+    <AdminLayout user={user} onLogout={handleLogout} currentPage="admin">
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              Student Clearance Dashboard
+              CPRINT Student Clearance Dashboard
             </h1>
             <p className="text-gray-600 mt-1">Manage student clearance submissions</p>
-          </div>
-          <div className="mt-4 md:mt-0 flex space-x-3">
-            <button
-              onClick={() => loadSubmissions(currentFilters)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
-            >
-              Refresh
-            </button>
           </div>
         </div>
 
