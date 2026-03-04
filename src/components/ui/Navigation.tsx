@@ -31,6 +31,7 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
           <Link
             key="admin-dashboard"
             href="/admin"
+            prefetch={false}
             className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
           >
             Dashboard
@@ -43,6 +44,7 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
           <Link
             key="admin-duplicates"
             href="/admin/duplicates"
+            prefetch={false}
             className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
           >
             Duplications
@@ -58,6 +60,7 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
         <Link
           key="undergraduate"
           href="/undergraduate"
+          prefetch={false}
           className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
         >
           Undergraduate Submission
@@ -70,6 +73,7 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
         <Link
           key="graduate"
           href="/graduate"
+          prefetch={false}
           className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
         >
           Graduate Submission
@@ -82,6 +86,7 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
         <Link
           key="coordinators"
           href="/coordinators"
+          prefetch={false}
           className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
         >
           Coordinator Lookup
@@ -94,6 +99,7 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
         <Link
           key="track"
           href="/track"
+          prefetch={false}
           className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
         >
           Track Submission
@@ -106,6 +112,7 @@ export function Navigation({ currentPage = 'home', showAdminLink = true, user, o
         <Link
           key="admin"
           href="/admin"
+          prefetch={false}
           className="text-gray-600 hover:text-gray-900 text-sm font-medium px-3 py-2 rounded-md hover:bg-gray-100 transition-colors"
         >
           Admin Login

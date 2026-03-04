@@ -10,7 +10,6 @@ const nextConfig: NextConfig = {
     remotePatterns: [],
   },
   trailingSlash: true,
-  output: 'export',
 };
 
 export default nextConfig;
