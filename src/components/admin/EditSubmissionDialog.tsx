@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { updateSubmissionDetails } from '@/services/firebase';
+import { isNotApplicableResearchType, normalizeResearchType } from '@/utils/researchType';
 import { toast } from 'sonner';
 
 interface EditSubmissionDialogProps {
@@ -43,16 +44,16 @@ export function EditSubmissionDialog({
         graduationMonth: submission.graduationMonth || '',
         graduationYear: submission.graduationYear || '',
         researchTitle: submission.researchTitle || '',
-        researchType: submission.researchType,
+        researchType: normalizeResearchType(submission.researchType),
         level: submission.level,
         groupMembers: submission.groupMembers || []
       });
     }
   }, [submission]);
 
-  // Clear research-related fields when switching to Non-Thesis (like student form)
+  // Clear research-related fields when switching to Not Applicable (like student form).
   useEffect(() => {
-    if (formData.researchType === ('Non-Thesis' as ResearchType)) {
+    if (isNotApplicableResearchType(formData.researchType)) {
       setFormData(prev => ({
         ...prev,
         adviser: '',
@@ -156,10 +157,10 @@ export function EditSubmissionDialog({
                   onChange={(e) => handleInputChange('researchType', e.target.value as ResearchType)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
-                  <option value="Thesis">Thesis</option>
                   <option value="Capstone">Capstone</option>
+                  <option value="Thesis">Thesis</option>
                   <option value="Dissertation">Dissertation</option>
-                  <option value="Non-Thesis">Non-Thesis</option>
+                  <option value="Not Applicable">Not Applicable</option>
                 </select>
               </div>
             </div>
@@ -215,7 +216,7 @@ export function EditSubmissionDialog({
             </div>
 
             {/* Conditional fields for Thesis/Dissertation/Capstone */}
-            {formData.researchType !== ('Non-Thesis' as ResearchType) && (
+            {!isNotApplicableResearchType(formData.researchType) && (
               <>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -292,8 +293,8 @@ export function EditSubmissionDialog({
             </div>
           </div>
 
-          {/* Group Members (Undergraduate only and not Non-Thesis) */}
-          {formData.level === 'undergrad' && formData.researchType !== ('Non-Thesis' as ResearchType) && (
+          {/* Group Members (Undergraduate only and not Not Applicable) */}
+          {formData.level === 'undergrad' && !isNotApplicableResearchType(formData.researchType) && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">Group Members</h3>

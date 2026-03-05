@@ -8,6 +8,7 @@ import Image from "next/image";
 import { storage } from "@/lib/firebase";
 import { Student } from "@/types";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { getResearchTypeLabel, isNotApplicableResearchType } from "@/utils/researchType";
 import { downloadWithConfirmation } from "@/services/exportService";
 import {
   clearSubmissionExportLink,
@@ -100,6 +101,7 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
     if (submission.level !== "undergrad") return null;
     return getUndergradClearanceState(submission);
   }, [submission]);
+  const isNotApplicable = isNotApplicableResearchType(submission.researchType);
 
   const releasePreviewUrl = useCallback(() => {
     setPreviewUrl((existing) => {
@@ -495,15 +497,19 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
               <div className="space-y-3 text-sm">
                 <div>
                   <p className="font-medium text-gray-700">Research Type</p>
-                  <p className="text-gray-900">{submission.researchType || "N/A"}</p>
+                  <p className="text-gray-900">{getResearchTypeLabel(submission.researchType)}</p>
                 </div>
                 <div>
                   <p className="font-medium text-gray-700">Research Title</p>
-                  <p className="text-gray-900">{submission.researchTitle || "N/A"}</p>
+                  <p className="text-gray-900">
+                    {isNotApplicable ? "N/A" : submission.researchTitle || "N/A"}
+                  </p>
                 </div>
                 <div>
                   <p className="font-medium text-gray-700">Adviser</p>
-                  <p className="text-gray-900">{submission.adviser || "N/A"}</p>
+                  <p className="text-gray-900">
+                    {isNotApplicable ? "N/A" : submission.adviser || "N/A"}
+                  </p>
                 </div>
               </div>
             </div>

@@ -9,7 +9,12 @@ export interface Student {
   graduationMonth: string;
   graduationYear: string;
   researchTitle: string;
-  researchType: "Thesis" | "Capstone" | "Dissertation" | "Non-Thesis";
+  researchType:
+    | "Capstone"
+    | "Thesis"
+    | "Dissertation"
+    | "Not Applicable"
+    | "Non-Thesis";
   groupMembers?: GroupMember[];
   fileList?: string[];
   zipFile: string; // URL of ZIP file containing all documents
@@ -29,7 +34,12 @@ export interface GroupMember {
 }
 
 export type Level = 'undergrad' | 'grad';
-export type ResearchType = 'Thesis' | 'Capstone' | 'Dissertation' | 'Non-Thesis';
+export type ResearchType =
+  | 'Capstone'
+  | 'Thesis'
+  | 'Dissertation'
+  | 'Not Applicable'
+  | 'Non-Thesis';
 
 export interface LegacyDocuments {
   approvalSheet: File | null;
@@ -62,7 +72,13 @@ export interface AdminUser {
 }
 
 export interface FilterOptions {
-  researchType?: "Thesis" | "Capstone" | "Dissertation" | "Non-Thesis" | "all";
+  researchType?:
+    | "Capstone"
+    | "Thesis"
+    | "Dissertation"
+    | "Not Applicable"
+    | "Non-Thesis"
+    | "all";
   searchTerm?: string;
 }
 

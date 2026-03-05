@@ -5,6 +5,7 @@ import { StudentFormData, Level, ResearchType } from "@/types";
 import { MultiFileUpload } from "./MultiFileUpload";
 import { Label } from "@/components/ui/label";
 import { getDocumentInstructionsForLevel } from "@/constants/documentInstructions";
+import { isNotApplicableResearchType } from "@/utils/researchType";
 import {
   Select,
   SelectContent,
@@ -65,9 +66,9 @@ export function StudentForm({
     }));
   }, [fixedResearchType]);
 
-  // Clear research-related fields when switching to Non-Thesis
+  // Clear research-related fields when switching to Not Applicable.
   useEffect(() => {
-    if (formData.researchType === ("Non-Thesis" as ResearchType)) {
+    if (isNotApplicableResearchType(formData.researchType)) {
       setFormData(prev => ({
         ...prev,
         adviser: "",
@@ -132,7 +133,11 @@ export function StudentForm({
   };
 
   const validateForm = (): boolean => {
-    if (formData.uploadedFiles.length === 0) {
+    if (
+      formData.researchType !== ("Capstone" as ResearchType) &&
+      !isNotApplicableResearchType(formData.researchType) &&
+      formData.uploadedFiles.length === 0
+    ) {
       setUploadError("Please upload at least one file.");
       return false;
     }
@@ -150,7 +155,21 @@ export function StudentForm({
     onSubmit(formData);
   };
 
-  const documentInstructions = getDocumentInstructionsForLevel(formData.level);
+  const isNotApplicable = isNotApplicableResearchType(formData.researchType);
+  const isCapstone = formData.researchType === ("Capstone" as ResearchType);
+  const hasOptionalOnlyPhotoRequirement = isCapstone || isNotApplicable;
+  const levelDocumentInstructions = getDocumentInstructionsForLevel(formData.level);
+  const documentInstructions = hasOptionalOnlyPhotoRequirement
+    ? levelDocumentInstructions.filter(
+        (instruction) => instruction.id === "photo-2x2"
+      )
+    : levelDocumentInstructions;
+
+  useEffect(() => {
+    if (hasOptionalOnlyPhotoRequirement) {
+      setUploadError("");
+    }
+  }, [hasOptionalOnlyPhotoRequirement]);
 
   return (
     <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
@@ -223,10 +242,10 @@ export function StudentForm({
                         }
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
                       >
-                        <option value="Thesis">Thesis</option>
                         <option value="Capstone">Capstone</option>
+                        <option value="Thesis">Thesis</option>
                         <option value="Dissertation">Dissertation</option>
-                        <option value="Non-Thesis">Non-Thesis</option>
+                        <option value="Not Applicable">Not Applicable</option>
                       </select>
                     </div>
                   )}
@@ -333,7 +352,7 @@ export function StudentForm({
                     placeholder="e.g., BSIT, BSCS, MIT, etc."
                   />
                 </div>
-                {formData.researchType !== ('Non-Thesis' as ResearchType) && (
+                {!isNotApplicable && (
                   <>
                   
                   <div>
@@ -346,7 +365,7 @@ export function StudentForm({
                       <input
                         id="researchTitle"
                         type="text"
-                        required={formData.researchType !== ('Non-Thesis' as ResearchType)}
+                        required={!isNotApplicable}
                         value={formData.researchTitle}
                         onChange={(e) =>
                           handleInputChange("researchTitle", e.target.value)
@@ -365,13 +384,13 @@ export function StudentForm({
                       <input
                         id="adviser"
                         type="text"
-                        required={formData.researchType !== ('Non-Thesis' as ResearchType)}
+                        required={!isNotApplicable}
                         value={formData.adviser}
                         onChange={(e) =>
                           handleInputChange("adviser", e.target.value)
                         }
                         className={`w-full px-3 py-2.5 sm:py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 text-base ${
-                          formData.researchType !== ('Non-Thesis' as ResearchType) && formData.adviser && formData.adviser.length < 2
+                          !isNotApplicable && formData.adviser && formData.adviser.length < 2
                             ? "border-red-500"
                             : "border-gray-300"
                         }`}
@@ -450,8 +469,8 @@ export function StudentForm({
               </div>
             </div>
 
-            {/* Group Members (Undergraduate only and not Non-Thesis) */}
-            {formData.level === "undergrad" && formData.researchType !== ('Non-Thesis' as ResearchType) && (
+            {/* Group Members (Undergraduate only and not Not Applicable) */}
+            {formData.level === "undergrad" && !isNotApplicable && (
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
                   <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
@@ -524,45 +543,51 @@ export function StudentForm({
             {/* Document Uploads */}
             <div className="space-y-4">
               <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
-                Document Submission Instructions
+                {hasOptionalOnlyPhotoRequirement
+                  ? "Document Submission Instructions"
+                  : "Document Submission Instructions"}
               </h2>
               <p className="text-sm text-gray-600">
-                Upload all applicable files in one submission. Document checks are
-                instruction-based, so include every file relevant to your case.
+                {hasOptionalOnlyPhotoRequirement
+                  ? "Only the 2x2 photo requirement applies, and it is optional if a graduation picture is already available."
+                  : "Upload all applicable files in one submission. Document checks are instruction-based, so include every file relevant to your case."}
               </p>
 
-              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                <ul className="space-y-3">
-                  {documentInstructions.map((instruction, index) => (
-                    <li key={instruction.id} className="text-sm text-gray-800">
-                      <p>
-                        <span className="font-medium">{index + 1}. {instruction.title}</span>
-                      </p>
-                      <p className="text-xs text-gray-600 mt-1">
-                        {instruction.description}
-                      </p>
-                      {(instruction.optional ||
-                        instruction.itOnly ||
-                        instruction.conditional) && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          {[
-                            instruction.optional ? "Optional" : null,
-                            instruction.itOnly ? "Information Technology courses only" : null,
-                            instruction.conditional ?? null,
-                          ]
-                            .filter(Boolean)
-                            .join(" | ")}
+              {documentInstructions.length > 0 && (
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <ul className="space-y-3">
+                    {documentInstructions.map((instruction, index) => (
+                      <li key={instruction.id} className="text-sm text-gray-800">
+                        <p>
+                          <span className="font-medium">{index + 1}. {instruction.title}</span>
                         </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {instruction.description}
+                        </p>
+                        {(instruction.optional ||
+                          instruction.itOnly ||
+                          instruction.conditional) && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {[
+                              instruction.optional ? "Optional" : null,
+                              instruction.itOnly ? "Information Technology courses only" : null,
+                              instruction.conditional ?? null,
+                            ]
+                              .filter(Boolean)
+                              .join(" | ")}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <MultiFileUpload
                 files={formData.uploadedFiles}
                 onFilesChange={handleFilesChange}
-                error={uploadError}
+                error={hasOptionalOnlyPhotoRequirement ? "" : uploadError}
+                isRequired={!hasOptionalOnlyPhotoRequirement}
               />
             </div>
 

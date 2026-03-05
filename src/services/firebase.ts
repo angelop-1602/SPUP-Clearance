@@ -30,6 +30,10 @@ import { db, storage, auth } from '@/lib/firebase';
 import { Student, StudentFormData, FilterOptions } from '@/types';
 import { generateDocumentId } from '@/utils/documentId';
 import {
+  isNotApplicableResearchType,
+  normalizeResearchType,
+} from '@/utils/researchType';
+import {
   UndergradParticipantKey,
   setUndergradAllParticipantsState,
   updateUndergradParticipantState,
@@ -96,9 +100,13 @@ function toDate(value: unknown): Date | undefined {
 
 function mapSubmissionData(submissionId: string, data: Record<string, unknown>): Student {
   const baseData = data as unknown as Student;
+  const normalizedResearchType = normalizeResearchType(
+    (data.researchType as string | undefined) ?? 'Thesis'
+  );
   return {
     ...baseData,
     id: submissionId,
+    researchType: normalizedResearchType,
     submittedAt: toDate(data.submittedAt) ?? new Date(),
     updatedAt: toDate(data.updatedAt),
     exportedAt: toDate(data.exportedAt),
@@ -124,8 +132,11 @@ export async function submitStudentClearance(formData: StudentFormData): Promise
       legacyDocuments &&
       Object.values(legacyDocuments).some((file) => Boolean(file))
     );
+    const requiresFiles =
+      formData.researchType !== 'Capstone' &&
+      !isNotApplicableResearchType(formData.researchType);
 
-    if (uploadedFiles.length === 0 && !hasLegacyFiles) {
+    if (requiresFiles && uploadedFiles.length === 0 && !hasLegacyFiles) {
       throw new Error('At least one file is required for submission.');
     }
 
@@ -177,7 +188,7 @@ export async function submitStudentClearance(formData: StudentFormData): Promise
       graduationMonth: formData.graduationMonth,
       graduationYear: formData.graduationYear,
       researchTitle: formData.researchTitle,
-      researchType: formData.researchType,
+      researchType: normalizeResearchType(formData.researchType),
       fileList,
       zipFile: zipDownloadURL,
       status: 'Submitted',
@@ -242,7 +253,11 @@ export async function getAllSubmissions(filters?: FilterOptions): Promise<Studen
     const constraints = [];
     
     if (filters?.researchType && filters.researchType !== 'all') {
-      constraints.push(where('researchType', '==', filters.researchType));
+      if (isNotApplicableResearchType(filters.researchType)) {
+        constraints.push(where('researchType', 'in', ['Not Applicable', 'Non-Thesis']));
+      } else {
+        constraints.push(where('researchType', '==', filters.researchType));
+      }
     }
 
     // Add ordering

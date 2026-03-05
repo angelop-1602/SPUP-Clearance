@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { StudentForm } from "@/components/forms/StudentForm";
 import { Navigation } from "@/components/ui/Navigation";
 import { submitStudentClearance } from "@/services/firebase";
-import { Level, StudentFormData } from "@/types";
+import { Level, ResearchType, StudentFormData } from "@/types";
 
 interface SubmissionFlowPageProps {
   level: Level;
@@ -18,6 +18,9 @@ export function SubmissionFlowPage({
   title,
 }: SubmissionFlowPageProps) {
   const isUndergraduate = level === "undergrad";
+  const fixedResearchType: ResearchType | undefined = isUndergraduate
+    ? ("Thesis" as ResearchType)
+    : undefined;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formInstanceKey, setFormInstanceKey] = useState(0);
   const [submissionResult, setSubmissionResult] = useState<{
@@ -125,7 +128,7 @@ export function SubmissionFlowPage({
           isSubmitting={isSubmitting}
           fixedLevel={level}
           lockLevel
-          fixedResearchType={isUndergraduate ? "Thesis" : undefined}
+          fixedResearchType={fixedResearchType}
           hideResearchType={isUndergraduate}
           hideAcademicInformation={isUndergraduate}
         />

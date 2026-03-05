@@ -22,6 +22,11 @@ import { DownloadConfirmationDialog } from '@/components/ui/DownloadConfirmation
 import { EditSubmissionDialog } from '@/components/admin/EditSubmissionDialog';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
+import {
+  getResearchTypeLabel,
+  isNotApplicableResearchType,
+  matchesResearchTypeFilter,
+} from '@/utils/researchType';
 
 // Exported Flag Component
 function ExportedFlag({ isExported, exportedAt }: { isExported?: boolean; exportedAt?: Date }) {
@@ -161,7 +166,15 @@ export function AdminTable({
   };
 
   const uniqueResearchTypes = Array.from(
-    new Set(submissions.map(s => s.researchType).filter(Boolean))
+    new Set(
+      submissions
+        .map((submission) =>
+          submission.researchType
+            ? getResearchTypeLabel(submission.researchType)
+            : ""
+        )
+        .filter(Boolean)
+    )
   ).sort();
   
   // Apply all filters client-side for better UX
@@ -183,7 +196,9 @@ export function AdminTable({
     
     // Apply research type filter
     if (filters.researchType && filters.researchType !== 'all') {
-      filtered = filtered.filter(s => s.researchType === filters.researchType);
+      filtered = filtered.filter((submission) =>
+        matchesResearchTypeFilter(submission.researchType, filters.researchType)
+      );
     }
     
     // Apply search filter
@@ -594,9 +609,9 @@ export function AdminTable({
                   {/* Research Type */}
                   <td className="px-4 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
-                      {submission.researchType}
+                      {getResearchTypeLabel(submission.researchType)}
                     </div>
-                    {submission.researchType !== 'Non-Thesis' && submission.adviser && (
+                    {!isNotApplicableResearchType(submission.researchType) && submission.adviser && (
                       <div className="text-sm text-gray-500">
                         Adviser: {truncateName(submission.adviser, 20)}
                       </div>
@@ -728,11 +743,11 @@ export function AdminTable({
             
             <div className="space-y-1 text-xs text-gray-600 mb-3">
               <p><span className="font-medium">Course:</span> {submission.course}</p>
-              <p><span className="font-medium">Research Type:</span> {submission.researchType}</p>
-              {submission.researchType !== 'Non-Thesis' && submission.researchTitle && (
+              <p><span className="font-medium">Research Type:</span> {getResearchTypeLabel(submission.researchType)}</p>
+              {!isNotApplicableResearchType(submission.researchType) && submission.researchTitle && (
                 <p><span className="font-medium">Research:</span> <span title={submission.researchTitle}>{truncateName(submission.researchTitle, 30)}</span></p>
               )}
-              {submission.researchType !== 'Non-Thesis' && submission.adviser && (
+              {!isNotApplicableResearchType(submission.researchType) && submission.adviser && (
                 <p><span className="font-medium">Adviser:</span> {truncateName(submission.adviser, 25)}</p>
               )}
               <p><span className="font-medium">Level:</span> {submission.level}</p>

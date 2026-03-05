@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { Student } from "@/types";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { getResearchTypeLabel, isNotApplicableResearchType } from "@/utils/researchType";
 
 interface SubmissionStatusProps {
   submission: Student;
@@ -53,6 +54,7 @@ export function SubmissionStatus({
   };
 
   const statusInfo = getStatusMessage();
+  const isNotApplicable = isNotApplicableResearchType(submission.researchType);
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-0">
@@ -135,7 +137,7 @@ export function SubmissionStatus({
                     Research Title
                   </label>
                   <p className="text-sm text-gray-900">
-                    {submission.researchTitle}
+                    {isNotApplicable ? "N/A" : submission.researchTitle || "N/A"}
                   </p>
                 </div>
 
@@ -144,7 +146,7 @@ export function SubmissionStatus({
                     Research Type
                   </label>
                   <p className="text-sm text-gray-900">
-                    {submission.researchType}
+                    {getResearchTypeLabel(submission.researchType)}
                   </p>
                 </div>
 
@@ -161,7 +163,9 @@ export function SubmissionStatus({
                   <label className="block text-sm font-medium text-gray-700">
                     Adviser
                   </label>
-                  <p className="text-sm text-gray-900">{submission.adviser}</p>
+                  <p className="text-sm text-gray-900">
+                    {isNotApplicable ? "N/A" : submission.adviser || "N/A"}
+                  </p>
                 </div>
               </div>
             </div>

@@ -30,7 +30,7 @@ export const DOCUMENT_INSTRUCTIONS: DocumentInstruction[] = [
   },
   {
     id: "undergrad-abstract",
-    title: "Abstract (for undergraduate only)",
+    title: "Abstract",
     description: "Preferred format: PDF file.",
     appliesTo: "undergrad",
   },
