@@ -16,9 +16,10 @@ export const DOCUMENT_INSTRUCTIONS: DocumentInstruction[] = [
   {
     id: "complete-manuscript",
     title:
-      "Complete Thesis or Dissertation from preliminaries to appendices, including scanned Certificate of Approval or SPUP REC Ethics Clearance",
+      "Complete Thesis or Dissertation from preliminaries to appendices",
     description: "Preferred format: MS Word file.",
     appliesTo: "all",
+    conditional: "Include if applicable and available scanned Certificate of Approval or SPUP REC Ethics Clearance"
   },
   {
     id: "long-abstract",
@@ -63,7 +64,7 @@ export const DOCUMENT_INSTRUCTIONS: DocumentInstruction[] = [
       "Submit only if no graduation picture is available; if graduation picture is available, this is not needed.",
     appliesTo: "all",
     optional: true,
-    conditional: "Only if graduation picture is unavailable",
+    conditional: "Only if graduation picture is not taken",
   },
 ];
 
