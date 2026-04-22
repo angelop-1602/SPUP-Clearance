@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { Navigation } from "@/components/ui/Navigation";
-import { db } from "@/lib/firebase";
+import { subscribeToSubmissions } from "@/services/submissions";
 import { Student } from "@/types";
 
 function normalizeValue(value: string): string {
@@ -27,36 +26,11 @@ export default function CoordinatorsPage() {
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    const submissionsQuery = query(
-      collection(db, "submissions"),
-      orderBy("submittedAt", "desc")
-    );
-
-    const unsubscribe = onSnapshot(
-      submissionsQuery,
-      (snapshot) => {
-        const realtimeSubmissions = snapshot.docs.map((submissionDoc) => {
-          const data = submissionDoc.data();
-          return {
-            ...data,
-            id: submissionDoc.id,
-            submittedAt: data.submittedAt?.toDate?.() ?? new Date(),
-            updatedAt: data.updatedAt?.toDate?.(),
-            exportedAt: data.exportedAt?.toDate?.(),
-            exportLink: data.exportLink || undefined,
-          } as Student;
-        });
-
-        setSubmissions(realtimeSubmissions);
-        setLoadError("");
-        setIsLoading(false);
-      },
-      (error) => {
-        console.error("Coordinator lookup listener error:", error);
-        setLoadError("Failed to load submissions. Please refresh and try again.");
-        setIsLoading(false);
-      }
-    );
+    const unsubscribe = subscribeToSubmissions((nextSubmissions) => {
+      setSubmissions(nextSubmissions);
+      setLoadError("");
+      setIsLoading(false);
+    });
 
     return () => unsubscribe();
   }, []);

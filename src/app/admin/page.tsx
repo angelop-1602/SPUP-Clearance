@@ -1,25 +1,20 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { User } from 'firebase/auth';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { LoginForm } from '@/components/admin/LoginForm';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { AdminTable } from '@/components/admin/AdminTable';
 import { SubmissionCard } from '@/components/admin/SubmissionCard';
 
-import { onAuthStateChange } from '@/services/firebase';
-import { toast } from 'sonner';
-import { Student } from '@/types';
-import { db } from '@/lib/firebase';
+import { onAuthStateChange, subscribeToSubmissions } from '@/services/submissions';
+import { AdminUser, Student } from '@/types';
 
 export default function AdminPage() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AdminUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [submissions, setSubmissions] = useState<Student[]>([]);
   const [selectedSubmission, setSelectedSubmission] = useState<Student | null>(null);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
-
 
   // Monitor authentication state
   useEffect(() => {
@@ -31,7 +26,7 @@ export default function AdminPage() {
     return () => unsubscribe();
   }, []);
 
-  // Realtime submissions listener
+  // Submissions listener
   useEffect(() => {
     if (!user) {
       setSubmissions([]);
@@ -42,40 +37,15 @@ export default function AdminPage() {
 
     setIsLoadingSubmissions(true);
 
-    const submissionsQuery = query(
-      collection(db, 'submissions'),
-      orderBy('submittedAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(
-      submissionsQuery,
-      (snapshot) => {
-        const realtimeSubmissions = snapshot.docs.map((submissionDoc) => {
-          const data = submissionDoc.data();
-          return {
-            ...data,
-            id: submissionDoc.id,
-            submittedAt: data.submittedAt?.toDate?.() || new Date(),
-            updatedAt: data.updatedAt?.toDate?.(),
-            exportedAt: data.exportedAt?.toDate?.(),
-            exportLink: data.exportLink || undefined,
-          } as Student;
-        });
-
-        setSubmissions(realtimeSubmissions);
-        setSelectedSubmission((previous) =>
-          previous
-            ? realtimeSubmissions.find((submission) => submission.id === previous.id) || null
-            : null
-        );
-        setIsLoadingSubmissions(false);
-      },
-      (error) => {
-        console.error('Realtime submissions listener error:', error);
-        toast.error('Failed to sync submissions in real time');
-        setIsLoadingSubmissions(false);
-      }
-    );
+    const unsubscribe = subscribeToSubmissions((nextSubmissions) => {
+      setSubmissions(nextSubmissions);
+      setSelectedSubmission((previous) =>
+        previous
+          ? nextSubmissions.find((submission) => submission.id === previous.id) || null
+          : null
+      );
+      setIsLoadingSubmissions(false);
+    });
 
     return () => unsubscribe();
   }, [user]);
@@ -93,10 +63,10 @@ export default function AdminPage() {
   };
 
   const handleSubmissionUpdate = () => {
-    // Realtime listener handles updates automatically.
+    // The local listener handles updates automatically.
   };
 
-  const handleLoginSuccess = (user: User) => {
+  const handleLoginSuccess = (user: AdminUser) => {
     setUser(user);
   };
 

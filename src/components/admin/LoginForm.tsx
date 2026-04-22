@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState } from 'react';
-import { adminLogin } from '@/services/firebase';
-import { User } from 'firebase/auth';
+import { adminLogin } from '@/services/submissions';
+import { AdminUser } from '@/types';
 
 interface LoginFormProps {
-  onLoginSuccess: (user: User) => void;
+  onLoginSuccess: (user: AdminUser) => void;
   isLoading?: boolean;
 }
 

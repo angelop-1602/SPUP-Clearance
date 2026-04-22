@@ -84,7 +84,7 @@ export async function downloadWithConfirmation(submission: Student): Promise<voi
  *
  * Notes:
  * - Requires Chromium-based browsers with `showDirectoryPicker` support
- * - Firebase Storage must allow CORS for programmatic fetch of the signed URL
+ * - The file host must allow the ZIP to be fetched by the browser or proxy route
  * - Preserves the internal folder structure of the ZIP
  */
 export async function downloadSubmissionAsFolder(submission: Student): Promise<void> {
@@ -109,7 +109,7 @@ export async function downloadSubmissionAsFolder(submission: Student): Promise<v
   const sanitizedName = submission.name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
   const downloadURL = submission.zipFile;
 
-  // 2) Fetch ZIP via same-origin proxy to avoid Firebase CORS
+  // 2) Fetch ZIP via same-origin proxy to avoid browser CORS issues
   const response = await fetch('/api/download-submission', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

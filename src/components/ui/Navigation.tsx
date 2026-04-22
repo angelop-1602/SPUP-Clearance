@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { User } from 'firebase/auth';
+import { AdminUser } from '@/types';
 
 interface NavigationProps {
   currentPage?:
@@ -16,7 +16,7 @@ interface NavigationProps {
     | 'admin-duplicates';
   showAdminLink?: boolean;
   // Admin-specific props
-  user?: User | null;
+  user?: AdminUser | null;
   onLogout?: () => void;
 }
 

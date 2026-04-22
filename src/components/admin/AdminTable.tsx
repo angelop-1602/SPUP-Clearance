@@ -16,7 +16,7 @@ import {
   markSubmissionAsExported,
   setUndergradAllClear,
   updateSubmissionStatus,
-} from '@/services/firebase';
+} from '@/services/submissions';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { DownloadConfirmationDialog } from '@/components/ui/DownloadConfirmationDialog';
 import { EditSubmissionDialog } from '@/components/admin/EditSubmissionDialog';
@@ -299,7 +299,7 @@ export function AdminTable({
       
       // If export link is provided, save it to the submission
       if (exportLink.trim()) {
-        const { setSubmissionExportLink } = await import('@/services/firebase');
+        const { setSubmissionExportLink } = await import('@/services/submissions');
         await setSubmissionExportLink(selectedSubmission.id, exportLink.trim());
       }
       
@@ -906,7 +906,7 @@ export function AdminTable({
           }
         }}
         title="Confirm Storage Deletion"
-        description={`The file for ${selectedSubmission?.name}'s submission has been downloaded to your computer.\n\nDo you want to remove it from Firebase Storage to save costs?\n\n✅ File downloaded to your computer\n🗑️ Remove from cloud storage (saves money)\n\nWARNING: Once deleted from storage, the file cannot be downloaded again from the admin panel.`}
+        description={`The file for ${selectedSubmission?.name}'s submission has been downloaded to your computer.\n\nDo you want to remove it from cloud storage to save costs?\n\nFile downloaded to your computer\nRemove from cloud storage (saves money)\n\nWARNING: Once deleted from storage, the file cannot be downloaded again from the admin panel.`}
         confirmText="Remove from Storage"
         cancelText="Keep in Storage"
         onConfirm={handleDownloadConfirm}

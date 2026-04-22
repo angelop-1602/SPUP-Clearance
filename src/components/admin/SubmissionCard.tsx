@@ -2,10 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import JSZip from "jszip";
-import { ref, getDownloadURL } from "firebase/storage";
 import { toast } from "sonner";
 import Image from "next/image";
-import { storage } from "@/lib/firebase";
 import { Student } from "@/types";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { getResearchTypeLabel, isNotApplicableResearchType } from "@/utils/researchType";
@@ -17,7 +15,7 @@ import {
   setUndergradAllClear,
   updateSubmissionStatus,
   updateUndergradParticipantClearance,
-} from "@/services/firebase";
+} from "@/services/submissions";
 import { getUndergradClearanceState } from "@/utils/undergradClearance";
 
 interface SubmissionCardProps {
@@ -151,13 +149,8 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
       return submission.zipFile;
     }
 
-    const sanitizedName = submission.name
-      .replace(/[^a-zA-Z0-9\s]/g, "")
-      .replace(/\s+/g, "_");
-    const storageFileName = `${sanitizedName}_${submission.id}.zip`;
-    const fileRef = ref(storage, `submissions/${storageFileName}`);
-    return getDownloadURL(fileRef);
-  }, [submission.id, submission.name, submission.zipFile]);
+    throw new Error("No file URL is available for this submission.");
+  }, [submission.zipFile]);
 
   const fetchZipBlob = useCallback(async (downloadURL: string): Promise<Blob> => {
     let directError: unknown = null;
@@ -352,7 +345,7 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
       toast.success(`Download started for ${submission.name}'s submission. Check your Downloads folder.`);
 
       const shouldDelete = window.confirm(
-        "File downloaded successfully.\n\nRemove this file from Firebase Storage to save costs?\n\nIf removed, it cannot be downloaded again from admin."
+        "File downloaded successfully.\n\nRemove this file from cloud storage to save costs?\n\nIf removed, it cannot be downloaded again from admin."
       );
 
       if (shouldDelete) {
