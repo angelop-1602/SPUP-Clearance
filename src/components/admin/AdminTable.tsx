@@ -571,13 +571,6 @@ export function AdminTable({
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                File
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Link
-              </th>
-
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
@@ -586,7 +579,7 @@ export function AdminTable({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedSubmissions.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                   {activeTab === 'all' && 'No submissions found'}
                   {activeTab === 'pending' && 'No pending submissions'}
                   {activeTab === 'cleared' && 'No cleared submissions'}
@@ -640,7 +633,7 @@ export function AdminTable({
                   </td>
                   
                   {/* File Indicator */}
-                  <td className="px-4 py-4 whitespace-nowrap text-center">
+                  <td className="hidden">
                     {submission.isExported ? (
                       <div className="flex items-center justify-center" title="File downloaded">
                         <FileDown className="h-4 w-4 text-green-600" />
@@ -657,7 +650,7 @@ export function AdminTable({
                   </td>
                   
                   {/* Link Indicator */}
-                  <td className="px-4 py-4 whitespace-nowrap text-center">
+                  <td className="hidden">
                     {submission.exportLink ? (
                       <div className="flex items-center justify-center" title="Export link attached">
                         <Link2 className="h-4 w-4 text-blue-600" />

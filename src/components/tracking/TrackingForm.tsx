@@ -1,7 +1,12 @@
 "use client";
 
-import React, { useState } from 'react';
-import { validateDocumentId } from '@/utils/documentId';
+import React, { useState } from "react";
+import { AlertCircle, Search } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { validateDocumentId } from "@/utils/documentId";
 
 interface TrackingFormProps {
   onTrack: (submissionId: string) => void;
@@ -10,98 +15,84 @@ interface TrackingFormProps {
 }
 
 export function TrackingForm({ onTrack, isLoading, error }: TrackingFormProps) {
-  const [submissionId, setSubmissionId] = useState('');
-  const [validationError, setValidationError] = useState('');
+  const [submissionId, setSubmissionId] = useState("");
+  const [validationError, setValidationError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setValidationError('');
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const nextSubmissionId = submissionId.trim();
+    setValidationError("");
 
-    if (!submissionId.trim()) {
-      setValidationError('Please enter your submission ID');
+    if (!nextSubmissionId) {
+      setValidationError("Please enter your submission ID.");
       return;
     }
 
-    // Validate the submission ID format
-    if (!validateDocumentId(submissionId.trim())) {
-      setValidationError('Invalid submission ID format. It should be like: SPUP_Clearance_2025_ABC123');
+    if (!validateDocumentId(nextSubmissionId)) {
+      setValidationError(
+        "Invalid submission ID format. Use SPUP_Clearance_2025_ABC123."
+      );
       return;
     }
 
-    onTrack(submissionId.trim());
+    onTrack(nextSubmissionId);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setSubmissionId(value);
-    
-    // Clear validation error when user starts typing
-    if (validationError) {
-      setValidationError('');
-    }
-  };
+  const activeError = validationError || error;
 
   return (
-    <div className="max-w-md mx-auto px-4 sm:px-0">
-      <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
-        <div className="text-center mb-6">
-          <div className="text-4xl mb-4">🔍</div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            Enter Your Submission ID
-          </h3>
-          <p className="text-sm text-gray-600">
-            You received this ID when you submitted your clearance request
-          </p>
+    <div className="mx-auto max-w-xl">
+      <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="mb-6 flex items-start gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Search className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">
+              Find Your Submission
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Enter the tracking ID shown after submission to view or update the
+              request while it is still under review.
+            </p>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="submissionId" className="block text-sm font-medium text-gray-700 mb-2">
-              Submission ID *
-            </label>
-            <input
+          <div className="space-y-2">
+            <Label htmlFor="submissionId">Submission ID</Label>
+            <Input
               id="submissionId"
               type="text"
               value={submissionId}
-              onChange={handleInputChange}
+              onChange={(event) => {
+                setSubmissionId(event.target.value);
+                if (validationError) setValidationError("");
+              }}
               placeholder="SPUP_Clearance_2025_ABC123"
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                validationError || error ? 'border-red-500' : 'border-gray-300'
-              }`}
+              aria-invalid={Boolean(activeError)}
               disabled={isLoading}
             />
-            {validationError && (
-              <p className="text-red-600 text-sm mt-1">{validationError}</p>
-            )}
           </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-md p-3">
-              <p className="text-red-600 text-sm">{error}</p>
+          {activeError && (
+            <div className="flex gap-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{activeError}</p>
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className={`w-full py-3 rounded-md text-white font-medium transition-colors ${
-              isLoading
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500'
-            }`}
-          >
-            {isLoading ? 'Tracking...' : 'Track Submission'}
-          </button>
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            <Search className="h-4 w-4" />
+            {isLoading ? "Searching..." : "Track Submission"}
+          </Button>
         </form>
 
-        <div className=" p-4 bg-gray-50 rounded-md">
-          <h4 className="text-sm font-medium text-gray-700 mb-2">💡 Tips:</h4>
-          <ul className="text-xs text-gray-600 space-y-1">
-            <li>• Copy and paste to avoid typing errors</li>
-            <li>• Format: SPUP_Clearance_YEAR_XXXXXX</li>
-          </ul>
+        <div className="mt-5 rounded-md bg-gray-50 p-4 text-sm text-gray-600">
+          Copy and paste the ID if possible. The format is
+          `SPUP_Clearance_YEAR_XXXXXX`.
         </div>
       </div>
     </div>
   );
-} 
+}

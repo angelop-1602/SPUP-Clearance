@@ -73,7 +73,6 @@ export interface AdminUser {
 }
 
 export interface CoordinatorSubmission {
-  id: string;
   name: string;
   studentId: string;
   level: Level;

@@ -69,10 +69,9 @@ export function mapSubmissionRow(
 
 export function mapCoordinatorRow(row: Pick<
   SubmissionRow,
-  "id" | "name" | "student_id" | "level" | "status" | "submitted_at"
+  "name" | "student_id" | "level" | "status" | "submitted_at"
 >): CoordinatorSubmission {
   return {
-    id: row.id,
     name: row.name,
     studentId: row.student_id,
     level: row.level,

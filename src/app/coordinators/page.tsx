@@ -133,14 +133,14 @@ export default function CoordinatorsPage() {
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Submitted
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Submission ID
-                          </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {matchingSubmissions.map((submission) => (
-                          <tr key={submission.id} className="hover:bg-gray-50">
+                          <tr
+                            key={`${submission.studentId}-${submission.name}-${submission.submittedAt.toISOString()}`}
+                            className="hover:bg-gray-50"
+                          >
                             <td className="px-4 py-3 text-sm font-medium text-gray-900">
                               {submission.name}
                             </td>
@@ -163,9 +163,6 @@ export default function CoordinatorsPage() {
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-700">
                             {formatDate(submission.submittedAt)}
-                          </td>
-                          <td className="px-4 py-3 text-xs font-mono text-gray-700 break-all">
-                            {submission.id}
                           </td>
                           </tr>
                         ))}

@@ -128,6 +128,27 @@ export async function getSubmissionById(
   return payload.submission ? normalizeStudent(payload.submission) : null;
 }
 
+export async function updateTrackedSubmission(
+  submissionId: string,
+  formData: StudentFormData
+): Promise<Student> {
+  const formPayload = new FormData();
+  formPayload.append("payload", JSON.stringify(toSubmissionPayload(formData)));
+
+  formData.uploadedFiles.forEach((file) => {
+    formPayload.append("files", file, file.name);
+  });
+
+  const payload = await readJsonResponse<{ submission: ApiStudent }>(
+    await fetch(`/api/submissions/${encodeURIComponent(submissionId)}/tracking`, {
+      method: "PATCH",
+      body: formPayload,
+    })
+  );
+
+  return normalizeStudent(payload.submission);
+}
+
 export async function searchCoordinatorSubmissions(
   searchTerm: string
 ): Promise<CoordinatorSubmission[]> {

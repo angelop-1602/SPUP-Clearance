@@ -1,90 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import JSZip from "jszip";
 
 import { SubmissionInsert } from "@/lib/submissions/records";
+import {
+  buildSubmissionArchive,
+  ensureSubmissionBucket,
+  sanitizeStorageSegment,
+} from "@/lib/submissions/files";
 import { SUBMISSION_FILES_BUCKET } from "@/lib/supabase/constants";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { StudentFormData } from "@/types";
 import { generateDocumentId } from "@/utils/documentId";
 import { isNotApplicableResearchType, normalizeResearchType } from "@/utils/researchType";
 
-function addDuplicateSuffix(fileName: string, sequence: number): string {
-  const dotIndex = fileName.lastIndexOf(".");
-  if (dotIndex <= 0) return `${fileName} (${sequence})`;
-
-  const base = fileName.slice(0, dotIndex);
-  const extension = fileName.slice(dotIndex);
-  return `${base} (${sequence})${extension}`;
-}
-
-function getUniqueZipFileName(fileName: string, usedNames: Set<string>): string {
-  const safeName = fileName.trim() || "file";
-  let candidate = safeName;
-  let sequence = 2;
-
-  while (usedNames.has(candidate.toLowerCase())) {
-    candidate = addDuplicateSuffix(safeName, sequence);
-    sequence += 1;
-  }
-
-  usedNames.add(candidate.toLowerCase());
-  return candidate;
-}
-
-function sanitizeStorageSegment(value: string): string {
-  return value.replace(/[^a-zA-Z0-9\s_-]/g, "").trim().replace(/\s+/g, "_") || "student";
-}
-
 function getRequiredString(payload: Record<string, unknown>, key: keyof StudentFormData): string {
   const value = payload[key];
   return typeof value === "string" ? value.trim() : "";
-}
-
-async function ensureSubmissionBucket() {
-  const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase.storage.listBuckets();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const hasBucket = data.some((bucket) => bucket.id === SUBMISSION_FILES_BUCKET);
-  if (hasBucket) return;
-
-  const { error: createError } = await supabase.storage.createBucket(
-    SUBMISSION_FILES_BUCKET,
-    { public: false }
-  );
-
-  if (createError) {
-    throw new Error(createError.message);
-  }
-}
-
-async function buildArchive(files: File[]): Promise<{
-  fileList: string[];
-  archive: Uint8Array | null;
-}> {
-  if (files.length === 0) {
-    return { fileList: [], archive: null };
-  }
-
-  const zip = new JSZip();
-  const fileList: string[] = [];
-  const usedNames = new Set<string>();
-
-  await Promise.all(
-    files.map(async (file) => {
-      const uniqueFileName = getUniqueZipFileName(file.name, usedNames);
-      fileList.push(uniqueFileName);
-      zip.file(uniqueFileName, await file.arrayBuffer());
-    })
-  );
-
-  return {
-    fileList,
-    archive: await zip.generateAsync({ type: "uint8array" }),
-  };
 }
 
 export async function POST(request: NextRequest) {
@@ -136,7 +66,7 @@ export async function POST(request: NextRequest) {
     }
 
     const documentId = generateDocumentId();
-    const { fileList, archive } = await buildArchive(files);
+    const { fileList, archive } = await buildSubmissionArchive(files);
     let zipPath: string | null = null;
 
     if (archive) {
