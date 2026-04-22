@@ -295,8 +295,9 @@ export async function adminLogin(
   password: string
 ): Promise<AdminUser> {
   const supabase = createSupabaseBrowserClient();
+  const normalizedEmail = email.trim().toLowerCase();
   const { error } = await supabase.auth.signInWithPassword({
-    email,
+    email: normalizedEmail,
     password,
   });
 
