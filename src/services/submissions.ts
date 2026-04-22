@@ -1,227 +1,151 @@
 "use client";
 
-import JSZip from "jszip";
-
-import { AdminUser, FilterOptions, Student, StudentFormData } from "@/types";
-import { generateDocumentId } from "@/utils/documentId";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import {
+  AdminUser,
+  CoordinatorSubmission,
+  FilterOptions,
+  Student,
+  StudentFormData,
+} from "@/types";
 import {
   isNotApplicableResearchType,
   normalizeResearchType,
 } from "@/utils/researchType";
-import {
-  UndergradParticipantKey,
-  setUndergradAllParticipantsState,
-  updateUndergradParticipantState,
-} from "@/utils/undergradClearance";
+import { UndergradParticipantKey } from "@/utils/undergradClearance";
 
-const SUBMISSIONS_STORAGE_KEY = "spup-clearance-submissions";
-const ADMIN_USER_STORAGE_KEY = "spup-clearance-admin-user";
-const SUBMISSIONS_EVENT = "spup-clearance-submissions-change";
-const AUTH_EVENT = "spup-clearance-auth-change";
+type ApiStudent = Omit<Student, "submittedAt" | "updatedAt" | "exportedAt"> & {
+  submittedAt: string;
+  updatedAt?: string | null;
+  exportedAt?: string | null;
+};
 
-type LegacyDocumentKey = keyof NonNullable<StudentFormData["documents"]>;
+type ApiCoordinatorSubmission = Omit<CoordinatorSubmission, "submittedAt"> & {
+  submittedAt: string;
+};
 
-function canUseBrowserStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
-}
-
-function addDuplicateSuffix(fileName: string, sequence: number): string {
-  const dotIndex = fileName.lastIndexOf(".");
-  if (dotIndex <= 0) {
-    return `${fileName} (${sequence})`;
-  }
-
-  const base = fileName.slice(0, dotIndex);
-  const extension = fileName.slice(dotIndex);
-  return `${base} (${sequence})${extension}`;
-}
-
-function getUniqueZipFileName(fileName: string, usedNames: Set<string>): string {
-  const safeName = fileName.trim() || "file";
-  let candidate = safeName;
-  let sequence = 2;
-
-  while (usedNames.has(candidate.toLowerCase())) {
-    candidate = addDuplicateSuffix(safeName, sequence);
-    sequence += 1;
-  }
-
-  usedNames.add(candidate.toLowerCase());
-  return candidate;
-}
-
-function getLegacyZipFileName(key: LegacyDocumentKey, file: File): string {
-  const fileExtension = file.name.includes(".")
-    ? file.name.split(".").pop() ?? ""
-    : "";
-  const extensionSuffix = fileExtension ? `.${fileExtension}` : "";
-
-  switch (key) {
-    case "approvalSheet":
-      return `approval_sheet${extensionSuffix}`;
-    case "fullPaper":
-      return `full_paper${extensionSuffix}`;
-    case "longAbstract":
-      return `long_abstract${extensionSuffix}`;
-    case "journalFormat":
-      return `journal_format${extensionSuffix}`;
-    case "graduationPicture":
-      return `graduation_picture${extensionSuffix}`;
-    default:
-      return `${key}${extensionSuffix}`;
-  }
-}
-
-function toDate(value: unknown): Date | undefined {
+function normalizeDate(value: string | Date | null | undefined): Date | undefined {
   if (!value) return undefined;
   if (value instanceof Date) return value;
 
-  if (typeof value === "string" || typeof value === "number") {
-    const parsedDate = new Date(value);
-    return Number.isNaN(parsedDate.getTime()) ? undefined : parsedDate;
-  }
-
-  return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
-function normalizeStoredSubmission(value: unknown): Student | null {
-  if (!value || typeof value !== "object") return null;
-
-  const submission = value as Student;
-  if (!submission.id) return null;
-
+function normalizeStudent(value: ApiStudent): Student {
   return {
-    ...submission,
-    researchType: normalizeResearchType(submission.researchType),
-    submittedAt: toDate(submission.submittedAt) ?? new Date(),
-    updatedAt: toDate(submission.updatedAt),
-    exportedAt: toDate(submission.exportedAt),
-    exportLink: submission.exportLink || undefined,
+    ...value,
+    researchType: normalizeResearchType(value.researchType),
+    submittedAt: normalizeDate(value.submittedAt) ?? new Date(),
+    updatedAt: normalizeDate(value.updatedAt),
+    exportedAt: normalizeDate(value.exportedAt),
+    exportLink: value.exportLink || undefined,
+    zipFile: value.zipFile || undefined,
+    zipPath: value.zipPath || undefined,
   };
 }
 
-function sortSubmissions(submissions: Student[]): Student[] {
-  return [...submissions].sort(
-    (a, b) => b.submittedAt.getTime() - a.submittedAt.getTime()
-  );
+function normalizeCoordinatorSubmission(
+  value: ApiCoordinatorSubmission
+): CoordinatorSubmission {
+  return {
+    ...value,
+    submittedAt: normalizeDate(value.submittedAt) ?? new Date(),
+  };
 }
 
-function readSubmissions(): Student[] {
-  if (!canUseBrowserStorage()) return [];
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const payload = await response.json().catch(() => ({}));
 
-  try {
-    const rawValue = window.localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
-    if (!rawValue) return [];
-
-    const parsedValue: unknown = JSON.parse(rawValue);
-    if (!Array.isArray(parsedValue)) return [];
-
-    return sortSubmissions(
-      parsedValue
-        .map((submission) => normalizeStoredSubmission(submission))
-        .filter((submission): submission is Student => Boolean(submission))
-    );
-  } catch (error) {
-    console.error("Unable to read local submissions:", error);
-    return [];
-  }
-}
-
-function writeSubmissions(submissions: Student[]): void {
-  if (!canUseBrowserStorage()) {
-    throw new Error("Local browser storage is not available.");
+  if (!response.ok) {
+    const message =
+      typeof payload.error === "string" ? payload.error : "Request failed";
+    throw new Error(message);
   }
 
-  window.localStorage.setItem(
-    SUBMISSIONS_STORAGE_KEY,
-    JSON.stringify(sortSubmissions(submissions))
-  );
-  window.dispatchEvent(new Event(SUBMISSIONS_EVENT));
+  return payload as T;
 }
 
-function upsertSubmission(updatedSubmission: Student): void {
-  const submissions = readSubmissions();
-  const existingIndex = submissions.findIndex(
-    (submission) => submission.id === updatedSubmission.id
-  );
+function toSubmissionPayload(formData: StudentFormData) {
+  return {
+    level: formData.level,
+    name: formData.name,
+    email: formData.email,
+    studentId: formData.studentId,
+    adviser: formData.adviser,
+    course: formData.course,
+    graduationMonth: formData.graduationMonth,
+    graduationYear: formData.graduationYear,
+    researchTitle: formData.researchTitle,
+    researchType: formData.researchType,
+    groupMembers: formData.groupMembers,
+  };
+}
 
-  if (existingIndex >= 0) {
-    submissions[existingIndex] = updatedSubmission;
+function appendLegacyDocumentFiles(formPayload: FormData, formData: StudentFormData) {
+  if (!formData.documents) return;
+
+  Object.values(formData.documents).forEach((file) => {
+    if (file) {
+      formPayload.append("files", file, file.name);
+    }
+  });
+}
+
+export async function submitStudentClearance(
+  formData: StudentFormData
+): Promise<string> {
+  const formPayload = new FormData();
+  formPayload.append("payload", JSON.stringify(toSubmissionPayload(formData)));
+
+  if (formData.uploadedFiles.length > 0) {
+    formData.uploadedFiles.forEach((file) => {
+      formPayload.append("files", file, file.name);
+    });
   } else {
-    submissions.unshift(updatedSubmission);
+    appendLegacyDocumentFiles(formPayload, formData);
   }
 
-  writeSubmissions(submissions);
-}
-
-function getSubmissionOrThrow(submissionId: string): Student {
-  const submission = readSubmissions().find((item) => item.id === submissionId);
-  if (!submission) {
-    throw new Error("Submission not found");
-  }
-
-  return submission;
-}
-
-async function buildSubmissionArchive(formData: StudentFormData): Promise<{
-  fileList: string[];
-  zipFile: string;
-}> {
-  const zip = new JSZip();
-  const fileList: string[] = [];
-
-  const uploadedFiles = formData.uploadedFiles ?? [];
-  const legacyDocuments = formData.documents;
-  const hasLegacyFiles = Boolean(
-    legacyDocuments &&
-      Object.values(legacyDocuments).some((file) => Boolean(file))
+  const payload = await readJsonResponse<{ documentId: string }>(
+    await fetch("/api/submissions", {
+      method: "POST",
+      body: formPayload,
+    })
   );
-  const requiresFiles =
-    formData.researchType !== "Capstone" &&
-    !isNotApplicableResearchType(formData.researchType);
 
-  if (requiresFiles && uploadedFiles.length === 0 && !hasLegacyFiles) {
-    throw new Error("At least one file is required for submission.");
-  }
-
-  if (uploadedFiles.length > 0) {
-    const usedNames = new Set<string>();
-    await Promise.all(
-      uploadedFiles.map(async (file) => {
-        const uniqueFileName = getUniqueZipFileName(file.name, usedNames);
-        fileList.push(uniqueFileName);
-        const arrayBuffer = await file.arrayBuffer();
-        zip.file(uniqueFileName, arrayBuffer);
-      })
-    );
-  } else if (legacyDocuments) {
-    await Promise.all(
-      Object.entries(legacyDocuments).map(async ([key, file]) => {
-        if (!file) return;
-
-        const legacyFileName = getLegacyZipFileName(
-          key as LegacyDocumentKey,
-          file
-        );
-        fileList.push(legacyFileName);
-        const arrayBuffer = await file.arrayBuffer();
-        zip.file(legacyFileName, arrayBuffer);
-      })
-    );
-  }
-
-  if (fileList.length === 0 || typeof URL === "undefined") {
-    return { fileList, zipFile: "" };
-  }
-
-  const zipBlob = await zip.generateAsync({ type: "blob" });
-  return {
-    fileList,
-    zipFile: URL.createObjectURL(zipBlob),
-  };
+  return payload.documentId;
 }
 
-function filterSubmissions(submissions: Student[], filters?: FilterOptions): Student[] {
+export async function getSubmissionById(
+  submissionId: string
+): Promise<Student | null> {
+  const payload = await readJsonResponse<{ submission: ApiStudent | null }>(
+    await fetch(`/api/submissions/${encodeURIComponent(submissionId)}/tracking`, {
+      cache: "no-store",
+    })
+  );
+
+  return payload.submission ? normalizeStudent(payload.submission) : null;
+}
+
+export async function searchCoordinatorSubmissions(
+  searchTerm: string
+): Promise<CoordinatorSubmission[]> {
+  if (!searchTerm.trim()) return [];
+
+  const payload = await readJsonResponse<{
+    submissions: ApiCoordinatorSubmission[];
+  }>(
+    await fetch(
+      `/api/coordinator-lookup?search=${encodeURIComponent(searchTerm.trim())}`,
+      { cache: "no-store" }
+    )
+  );
+
+  return payload.submissions.map(normalizeCoordinatorSubmission);
+}
+
+function applyFilters(submissions: Student[], filters?: FilterOptions): Student[] {
   let filteredSubmissions = submissions;
 
   if (filters?.researchType && filters.researchType !== "all") {
@@ -248,139 +172,52 @@ function filterSubmissions(submissions: Student[], filters?: FilterOptions): Stu
   return filteredSubmissions;
 }
 
-function readAdminUser(): AdminUser | null {
-  if (!canUseBrowserStorage()) return null;
-
-  try {
-    const rawValue = window.localStorage.getItem(ADMIN_USER_STORAGE_KEY);
-    if (!rawValue) return null;
-
-    const parsedValue: unknown = JSON.parse(rawValue);
-    if (!parsedValue || typeof parsedValue !== "object") return null;
-
-    const user = parsedValue as AdminUser;
-    if (!user.email || !user.uid) return null;
-
-    return user;
-  } catch {
-    return null;
-  }
-}
-
-function writeAdminUser(user: AdminUser | null): void {
-  if (!canUseBrowserStorage()) return;
-
-  if (user) {
-    window.localStorage.setItem(ADMIN_USER_STORAGE_KEY, JSON.stringify(user));
-  } else {
-    window.localStorage.removeItem(ADMIN_USER_STORAGE_KEY);
-  }
-
-  window.dispatchEvent(new Event(AUTH_EVENT));
-}
-
-function createLocalUser(email: string): AdminUser {
-  const normalizedEmail = email.trim().toLowerCase();
-  const uid = `admin-${normalizedEmail.replace(/[^a-z0-9]/g, "-")}`;
-  return {
-    email: normalizedEmail,
-    uid,
-  };
-}
-
-export async function submitStudentClearance(
-  formData: StudentFormData
-): Promise<string> {
-  const documentId = generateDocumentId();
-  const { fileList, zipFile } = await buildSubmissionArchive(formData);
-
-  const submission: Student = {
-    id: documentId,
-    level: formData.level,
-    name: formData.name,
-    email: formData.email,
-    studentId: formData.studentId,
-    adviser: formData.adviser,
-    course: formData.course,
-    graduationMonth: formData.graduationMonth,
-    graduationYear: formData.graduationYear,
-    researchTitle: formData.researchTitle,
-    researchType: normalizeResearchType(formData.researchType),
-    fileList,
-    zipFile,
-    status: "Submitted",
-    submittedAt: new Date(),
-  };
-
-  if (
-    formData.level === "undergrad" &&
-    formData.groupMembers &&
-    formData.groupMembers.length > 0
-  ) {
-    const validGroupMembers = formData.groupMembers
-      .map((member) => ({
-        ...member,
-        name: member.name.trim(),
-        studentID: member.studentID.trim(),
-      }))
-      .filter((member) => member.name || member.studentID);
-
-    if (validGroupMembers.length > 0) {
-      submission.groupMembers = validGroupMembers;
-    }
-  }
-
-  upsertSubmission(submission);
-  return documentId;
-}
-
-export async function getSubmissionById(
-  submissionId: string
-): Promise<Student | null> {
-  return (
-    readSubmissions().find((submission) => submission.id === submissionId) ??
-    null
-  );
-}
-
 export async function getAllSubmissions(
   filters?: FilterOptions
 ): Promise<Student[]> {
-  return filterSubmissions(readSubmissions(), filters);
+  const payload = await readJsonResponse<{ submissions: ApiStudent[] }>(
+    await fetch("/api/admin/submissions", { cache: "no-store" })
+  );
+
+  return applyFilters(payload.submissions.map(normalizeStudent), filters);
 }
 
 export function subscribeToSubmissions(
   callback: (submissions: Student[]) => void
 ): () => void {
   let isDisposed = false;
+  const supabase = createSupabaseBrowserClient();
 
-  const emit = () => {
-    if (!isDisposed) {
-      callback(readSubmissions());
+  const emit = async () => {
+    try {
+      const submissions = await getAllSubmissions();
+      if (!isDisposed) {
+        callback(submissions);
+      }
+    } catch (error) {
+      console.error("Failed to load admin submissions:", error);
+      if (!isDisposed) {
+        callback([]);
+      }
     }
   };
 
-  emit();
+  void emit();
 
-  if (!canUseBrowserStorage()) {
-    return () => {
-      isDisposed = true;
-    };
-  }
-
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === SUBMISSIONS_STORAGE_KEY) {
-      emit();
-    }
-  };
-
-  window.addEventListener(SUBMISSIONS_EVENT, emit);
-  window.addEventListener("storage", handleStorage);
+  const channel = supabase
+    .channel("admin-submissions")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "submissions" },
+      () => {
+        void emit();
+      }
+    )
+    .subscribe();
 
   return () => {
     isDisposed = true;
-    window.removeEventListener(SUBMISSIONS_EVENT, emit);
-    window.removeEventListener("storage", handleStorage);
+    void supabase.removeChannel(channel);
   };
 }
 
@@ -388,25 +225,26 @@ export async function updateSubmissionStatus(
   submissionId: string,
   status: "Submitted" | "Cleared"
 ): Promise<void> {
-  const submission = getSubmissionOrThrow(submissionId);
-  upsertSubmission({
-    ...submission,
-    status,
-    updatedAt: new Date(),
-  });
+  await readJsonResponse<{ submission: ApiStudent }>(
+    await fetch(`/api/admin/submissions/${encodeURIComponent(submissionId)}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    })
+  );
 }
 
 export async function updateSubmissionDetails(
   submissionId: string,
   updates: Partial<Student>
 ): Promise<void> {
-  const submission = getSubmissionOrThrow(submissionId);
-  upsertSubmission({
-    ...submission,
-    ...updates,
-    id: submission.id,
-    updatedAt: new Date(),
-  });
+  await readJsonResponse<{ submission: ApiStudent }>(
+    await fetch(`/api/admin/submissions/${encodeURIComponent(submissionId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    })
+  );
 }
 
 export async function updateUndergradParticipantClearance(
@@ -414,121 +252,121 @@ export async function updateUndergradParticipantClearance(
   participantKey: UndergradParticipantKey,
   isCleared: boolean
 ): Promise<void> {
-  const submission = getSubmissionOrThrow(submissionId);
-
-  if (submission.level !== "undergrad") {
-    throw new Error("Participant clearance is only available for undergraduate submissions");
-  }
-
-  const nextClearanceState = updateUndergradParticipantState(
-    submission,
-    participantKey,
-    isCleared
+  await readJsonResponse<{ submission: ApiStudent }>(
+    await fetch(
+      `/api/admin/submissions/${encodeURIComponent(submissionId)}/participants`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantKey, isCleared }),
+      }
+    )
   );
-
-  upsertSubmission({
-    ...submission,
-    leaderCleared: nextClearanceState.leaderCleared,
-    groupMembers: nextClearanceState.groupMembers,
-    status: nextClearanceState.status,
-    updatedAt: new Date(),
-  });
 }
 
 export async function setUndergradAllClear(
   submissionId: string,
   isCleared: boolean = true
 ): Promise<void> {
-  const submission = getSubmissionOrThrow(submissionId);
+  await readJsonResponse<{ submission: ApiStudent }>(
+    await fetch(
+      `/api/admin/submissions/${encodeURIComponent(submissionId)}/participants`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true, isCleared }),
+      }
+    )
+  );
+}
 
-  if (submission.level !== "undergrad") {
-    throw new Error("All clear is only available for undergraduate submissions");
+async function getAdminUserFromServer(): Promise<AdminUser | null> {
+  const response = await fetch("/api/admin/me", { cache: "no-store" });
+  if (response.status === 401 || response.status === 403) {
+    return null;
   }
 
-  const nextClearanceState = setUndergradAllParticipantsState(
-    submission,
-    isCleared
-  );
-
-  upsertSubmission({
-    ...submission,
-    leaderCleared: nextClearanceState.leaderCleared,
-    groupMembers: nextClearanceState.groupMembers,
-    status: nextClearanceState.status,
-    updatedAt: new Date(),
-  });
+  const payload = await readJsonResponse<{ user: AdminUser }>(response);
+  return payload.user;
 }
 
 export async function adminLogin(
   email: string,
   password: string
 ): Promise<AdminUser> {
-  if (!email.trim() || !password) {
-    throw new Error("Email and password are required");
+  const supabase = createSupabaseBrowserClient();
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    throw new Error(error.message);
   }
 
-  const user = createLocalUser(email);
-  writeAdminUser(user);
+  const user = await getAdminUserFromServer();
+  if (!user) {
+    await supabase.auth.signOut();
+    throw new Error("This account is not authorized for admin access");
+  }
+
   return user;
 }
 
 export async function adminLogout(): Promise<void> {
-  writeAdminUser(null);
+  const supabase = createSupabaseBrowserClient();
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 export function onAuthStateChange(callback: (user: AdminUser | null) => void) {
   let isDisposed = false;
+  const supabase = createSupabaseBrowserClient();
 
-  const emit = () => {
-    if (!isDisposed) {
-      callback(readAdminUser());
+  const emit = async () => {
+    try {
+      const user = await getAdminUserFromServer();
+      if (!isDisposed) callback(user);
+    } catch {
+      if (!isDisposed) callback(null);
     }
   };
 
-  emit();
+  void emit();
 
-  if (!canUseBrowserStorage()) {
-    return () => {
-      isDisposed = true;
-    };
-  }
-
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === ADMIN_USER_STORAGE_KEY) {
-      emit();
-    }
-  };
-
-  window.addEventListener(AUTH_EVENT, emit);
-  window.addEventListener("storage", handleStorage);
+  const { data } = supabase.auth.onAuthStateChange(() => {
+    void emit();
+  });
 
   return () => {
     isDisposed = true;
-    window.removeEventListener(AUTH_EVENT, emit);
-    window.removeEventListener("storage", handleStorage);
+    data.subscription.unsubscribe();
   };
 }
 
-export function getCurrentUser(): AdminUser | null {
-  return readAdminUser();
+export async function getCurrentUser(): Promise<AdminUser | null> {
+  return getAdminUserFromServer();
 }
 
 export async function markSubmissionAsExported(
   submissionId: string,
-  _removeFile: boolean = true
+  deleteFromStorage: boolean = true
 ): Promise<void> {
-  const submission = getSubmissionOrThrow(submissionId);
-  upsertSubmission({
-    ...submission,
-    isExported: true,
-    exportedAt: new Date(),
-    updatedAt: new Date(),
-  });
+  await readJsonResponse<{ submission: ApiStudent }>(
+    await fetch(`/api/admin/submissions/${encodeURIComponent(submissionId)}/export`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deleteFromStorage }),
+    })
+  );
 }
 
 export async function bulkMarkAsExported(
   submissionIds: string[],
-  removeFile: boolean = true
+  deleteFromStorage: boolean = true
 ): Promise<{ success: string[]; failed: string[] }> {
   const results: { success: string[]; failed: string[] } = {
     success: [],
@@ -537,7 +375,7 @@ export async function bulkMarkAsExported(
 
   for (const id of submissionIds) {
     try {
-      await markSubmissionAsExported(id, removeFile);
+      await markSubmissionAsExported(id, deleteFromStorage);
       results.success.push(id);
     } catch (error) {
       console.error(`Failed to mark ${id} as exported:`, error);
@@ -549,7 +387,8 @@ export async function bulkMarkAsExported(
 }
 
 export async function getSubmissionsForExport(): Promise<Student[]> {
-  return readSubmissions().filter(
+  const submissions = await getAllSubmissions();
+  return submissions.filter(
     (submission) => submission.status === "Cleared" && !submission.isExported
   );
 }
@@ -557,35 +396,45 @@ export async function getSubmissionsForExport(): Promise<Student[]> {
 export async function clearSubmissionExportLink(
   submissionId: string
 ): Promise<void> {
-  const submission = getSubmissionOrThrow(submissionId);
-  const { exportLink: _exportLink, ...submissionWithoutLink } = submission;
-  upsertSubmission({
-    ...submissionWithoutLink,
-    updatedAt: new Date(),
-  });
+  await readJsonResponse<{ submission: ApiStudent }>(
+    await fetch(
+      `/api/admin/submissions/${encodeURIComponent(submissionId)}/export-link`,
+      { method: "DELETE" }
+    )
+  );
 }
 
 export async function setSubmissionExportLink(
   submissionId: string,
   exportLink: string
 ): Promise<void> {
-  const submission = getSubmissionOrThrow(submissionId);
-  upsertSubmission({
-    ...submission,
-    exportLink,
-    updatedAt: new Date(),
-  });
+  await readJsonResponse<{ submission: ApiStudent }>(
+    await fetch(
+      `/api/admin/submissions/${encodeURIComponent(submissionId)}/export-link`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exportLink }),
+      }
+    )
+  );
 }
 
 export async function deleteSubmission(submissionId: string): Promise<void> {
-  const submissions = readSubmissions();
-  const nextSubmissions = submissions.filter(
-    (submission) => submission.id !== submissionId
+  await readJsonResponse<{ ok: true }>(
+    await fetch(`/api/admin/submissions/${encodeURIComponent(submissionId)}`, {
+      method: "DELETE",
+    })
+  );
+}
+
+export async function getSubmissionDownloadUrl(submissionId: string): Promise<string> {
+  const payload = await readJsonResponse<{ url: string }>(
+    await fetch(
+      `/api/admin/submissions/${encodeURIComponent(submissionId)}/signed-url`,
+      { method: "POST" }
+    )
   );
 
-  if (nextSubmissions.length === submissions.length) {
-    throw new Error("Submission not found");
-  }
-
-  writeSubmissions(nextSubmissions);
+  return payload.url;
 }
