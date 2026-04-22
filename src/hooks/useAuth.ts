@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { User } from 'firebase/auth';
-import { onAuthStateChange } from '@/services/firebase';
+import { onAuthStateChange } from '@/services/submissions';
+import { AdminUser } from '@/types';
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AdminUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {

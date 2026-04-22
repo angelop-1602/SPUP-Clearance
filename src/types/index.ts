@@ -17,7 +17,8 @@ export interface Student {
     | "Non-Thesis";
   groupMembers?: GroupMember[];
   fileList?: string[];
-  zipFile: string; // URL of ZIP file containing all documents
+  zipFile?: string; // Temporary signed URL of ZIP file containing all documents
+  zipPath?: string; // Private storage path for the submitted ZIP
   status: "Submitted" | "Cleared";
   submittedAt: Date;
   updatedAt?: Date;
@@ -69,6 +70,15 @@ export interface StudentFormData {
 export interface AdminUser {
   email: string;
   uid: string;
+}
+
+export interface CoordinatorSubmission {
+  id: string;
+  name: string;
+  studentId: string;
+  level: Level;
+  status: "Submitted" | "Cleared";
+  submittedAt: Date;
 }
 
 export interface FilterOptions {

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { jsonError, requireAdmin } from '@/lib/api/admin';
 
 export async function POST(request: NextRequest) {
   try {
+    await requireAdmin();
+
     const { url } = await request.json();
     if (!url || typeof url !== 'string') {
       return NextResponse.json({ error: 'Missing url' }, { status: 400 });
@@ -32,6 +35,11 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err) {
+    const authError = jsonError(err);
+    if (authError.status !== 500) {
+      return authError;
+    }
+
     return NextResponse.json({ error: 'Proxy failed' }, { status: 500 });
   }
 }

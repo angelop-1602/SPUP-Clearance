@@ -2,6 +2,7 @@
 
 import { Student } from '@/types';
 import JSZip from 'jszip';
+import { getSubmissionDownloadUrl } from '@/services/submissions';
 
 /**
  * Export Service for downloading and managing cleared submissions
@@ -13,17 +14,11 @@ import JSZip from 'jszip';
  */
 export async function downloadSubmissionFile(submission: Student): Promise<void> {
   try {
-    if (!submission.zipFile) {
-      throw new Error('No file available for this submission');
-    }
-
     console.log('Starting download for submission:', submission.id);
-    console.log('Original zipFile URL:', submission.zipFile);
     
     const sanitizedName = submission.name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
     const customFileName = `${sanitizedName}_${submission.id}.zip`;
-    const downloadURL = submission.zipFile;
-    console.log('Using submission zip URL for download');
+    const downloadURL = submission.zipFile || await getSubmissionDownloadUrl(submission.id);
 
     const link = document.createElement('a');
     link.href = downloadURL;
@@ -84,7 +79,7 @@ export async function downloadWithConfirmation(submission: Student): Promise<voi
  *
  * Notes:
  * - Requires Chromium-based browsers with `showDirectoryPicker` support
- * - Firebase Storage must allow CORS for programmatic fetch of the signed URL
+ * - The file host must allow the ZIP to be fetched by the browser or proxy route
  * - Preserves the internal folder structure of the ZIP
  */
 export async function downloadSubmissionAsFolder(submission: Student): Promise<void> {
@@ -102,14 +97,10 @@ export async function downloadSubmissionAsFolder(submission: Student): Promise<v
     throw new Error('Invalid submission data.');
   }
 
-  if (!submission.zipFile) {
-    throw new Error('No file available for this submission');
-  }
-
   const sanitizedName = submission.name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
-  const downloadURL = submission.zipFile;
+  const downloadURL = submission.zipFile || await getSubmissionDownloadUrl(submission.id);
 
-  // 2) Fetch ZIP via same-origin proxy to avoid Firebase CORS
+  // 2) Fetch ZIP via same-origin proxy to avoid browser CORS issues
   const response = await fetch('/api/download-submission', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

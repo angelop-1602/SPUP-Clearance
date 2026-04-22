@@ -1,13 +1,13 @@
 "use client";
 
 import React from 'react';
-import { adminLogout } from '@/services/firebase';
-import { User } from 'firebase/auth';
+import { adminLogout } from '@/services/submissions';
 import { Navigation } from '@/components/ui/Navigation';
+import { AdminUser } from '@/types';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
-  user: User;
+  user: AdminUser;
   onLogout: () => void;
   currentPage?: 'admin' | 'admin-duplicates';
 }

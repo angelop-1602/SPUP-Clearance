@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { updateSubmissionDetails } from '@/services/firebase';
+import { updateSubmissionDetails } from '@/services/submissions';
 import { isNotApplicableResearchType, normalizeResearchType } from '@/utils/researchType';
 import { toast } from 'sonner';
 

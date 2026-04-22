@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { StudentForm } from "@/components/forms/StudentForm";
 import { Navigation } from "@/components/ui/Navigation";
-import { submitStudentClearance } from "@/services/firebase";
+import { submitStudentClearance } from "@/services/submissions";
 import { Level, ResearchType, StudentFormData } from "@/types";
 
 interface SubmissionFlowPageProps {

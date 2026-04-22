@@ -2,22 +2,21 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import JSZip from "jszip";
-import { ref, getDownloadURL } from "firebase/storage";
 import { toast } from "sonner";
 import Image from "next/image";
-import { storage } from "@/lib/firebase";
 import { Student } from "@/types";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { getResearchTypeLabel, isNotApplicableResearchType } from "@/utils/researchType";
 import { downloadWithConfirmation } from "@/services/exportService";
 import {
   clearSubmissionExportLink,
+  getSubmissionDownloadUrl,
   markSubmissionAsExported,
   setSubmissionExportLink,
   setUndergradAllClear,
   updateSubmissionStatus,
   updateUndergradParticipantClearance,
-} from "@/services/firebase";
+} from "@/services/submissions";
 import { getUndergradClearanceState } from "@/utils/undergradClearance";
 
 interface SubmissionCardProps {
@@ -31,6 +30,10 @@ type PreviewType = "none" | "pdf" | "image" | "text" | "unsupported";
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg"]);
 const TEXT_EXTENSIONS = new Set(["txt", "md", "csv", "json", "log", "xml", "yaml", "yml", "tsv"]);
 const zipCache = new Map<string, { zip: JSZip; entries: { path: string }[] }>();
+
+function hasStoredFile(submission: Student): boolean {
+  return Boolean(submission.zipFile || submission.zipPath);
+}
 
 function getFileExtension(path: string): string {
   const fileName = path.split("/").pop() ?? path;
@@ -151,13 +154,8 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
       return submission.zipFile;
     }
 
-    const sanitizedName = submission.name
-      .replace(/[^a-zA-Z0-9\s]/g, "")
-      .replace(/\s+/g, "_");
-    const storageFileName = `${sanitizedName}_${submission.id}.zip`;
-    const fileRef = ref(storage, `submissions/${storageFileName}`);
-    return getDownloadURL(fileRef);
-  }, [submission.id, submission.name, submission.zipFile]);
+    return getSubmissionDownloadUrl(submission.id);
+  }, [submission.id, submission.zipFile]);
 
   const fetchZipBlob = useCallback(async (downloadURL: string): Promise<Blob> => {
     let directError: unknown = null;
@@ -346,13 +344,18 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
       return;
     }
 
+    if (!hasStoredFile(submission)) {
+      toast.info("No file is attached to this submission.");
+      return;
+    }
+
     setIsDownloading(true);
     try {
       await downloadWithConfirmation(submission);
       toast.success(`Download started for ${submission.name}'s submission. Check your Downloads folder.`);
 
       const shouldDelete = window.confirm(
-        "File downloaded successfully.\n\nRemove this file from Firebase Storage to save costs?\n\nIf removed, it cannot be downloaded again from admin."
+        "File downloaded successfully.\n\nRemove this file from cloud storage to save costs?\n\nIf removed, it cannot be downloaded again from admin."
       );
 
       if (shouldDelete) {
@@ -425,7 +428,7 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
                   <span className="text-sm text-gray-600">File unavailable (already exported)</span>
                   <button type="button" onClick={() => setIsEditingLink(true)} className="ml-2 text-gray-600 hover:text-gray-800">Edit Link</button>
                 </div>
-              ) : (
+              ) : hasStoredFile(submission) ? (
                 <button
                   onClick={handleDownloadZip}
                   disabled={isDownloading}
@@ -433,6 +436,10 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
                 >
                   {isDownloading ? "Downloading..." : `Download ZIP (${submission.id}.zip)`}
                 </button>
+              ) : (
+                <div className="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-md">
+                  <span className="text-sm text-gray-600">No ZIP file attached</span>
+                </div>
               )}
             </div>
           </div>
@@ -560,6 +567,8 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
             <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">Submitted Files</h3>
             {submission.isExported ? (
               <p className="text-sm text-gray-600">Files are no longer available in storage (already exported).</p>
+            ) : !hasStoredFile(submission) ? (
+              <p className="text-sm text-gray-600">No submitted files are attached to this submission.</p>
             ) : (
               <div className="space-y-4">
                 {isLoadingFiles && <p className="text-sm text-gray-600">Loading submitted files...</p>}
