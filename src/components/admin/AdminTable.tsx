@@ -16,7 +16,7 @@ import {
   markSubmissionAsExported,
   setUndergradAllClear,
   updateSubmissionStatus,
-} from '@/services/firebase';
+} from '@/services/submissions';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 import { DownloadConfirmationDialog } from '@/components/ui/DownloadConfirmationDialog';
 import { EditSubmissionDialog } from '@/components/admin/EditSubmissionDialog';
@@ -64,6 +64,10 @@ type TabType = 'all' | 'pending' | 'cleared';
 
 const ITEMS_PER_PAGE = 10;
 const SHOW_FOLDER_DOWNLOAD = false;
+
+function hasStoredFile(submission: Student): boolean {
+  return Boolean(submission.zipFile || submission.zipPath);
+}
 
 export function AdminTable({ 
   submissions, 
@@ -245,6 +249,11 @@ export function AdminTable({
       return;
     }
 
+    if (!hasStoredFile(submission)) {
+      toast.info('No file is attached to this submission.');
+      return;
+    }
+
     // Show loading toast
     toast.loading(`Preparing download for ${submission.name}'s submission...`, { id: `download-${submission.id}` });
 
@@ -268,6 +277,11 @@ export function AdminTable({
   const handleDownloadFolderClick = async (submission: Student) => {
     if (submission.isExported) {
       toast.info('This submission was already downloaded and removed from storage.');
+      return;
+    }
+
+    if (!hasStoredFile(submission)) {
+      toast.info('No file is attached to this submission.');
       return;
     }
 
@@ -299,7 +313,7 @@ export function AdminTable({
       
       // If export link is provided, save it to the submission
       if (exportLink.trim()) {
-        const { setSubmissionExportLink } = await import('@/services/firebase');
+        const { setSubmissionExportLink } = await import('@/services/submissions');
         await setSubmissionExportLink(selectedSubmission.id, exportLink.trim());
       }
       
@@ -631,9 +645,13 @@ export function AdminTable({
                       <div className="flex items-center justify-center" title="File downloaded">
                         <FileDown className="h-4 w-4 text-green-600" />
                       </div>
-                    ) : (
+                    ) : hasStoredFile(submission) ? (
                       <div className="flex items-center justify-center" title="File available">
                         <FileDown className="h-4 w-4 text-gray-400" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center" title="No file attached">
+                        <span className="text-gray-400">-</span>
                       </div>
                     )}
                   </td>
@@ -689,12 +707,16 @@ export function AdminTable({
                         ) : (
                           <DropdownMenuItem 
                             onClick={() => handleDownloadClick(submission)}
-                            disabled={submission.isExported}
-                            className={submission.isExported ? "opacity-50 cursor-not-allowed" : ""}
+                            disabled={submission.isExported || !hasStoredFile(submission)}
+                            className={submission.isExported || !hasStoredFile(submission) ? "opacity-50 cursor-not-allowed" : ""}
                           >
                             <Download className="h-4 w-4 mr-2" />
-                            <span className={submission.isExported ? "text-gray-400" : ""}>
-                              {submission.isExported ? "Already Downloaded" : "Download"}
+                            <span className={submission.isExported || !hasStoredFile(submission) ? "text-gray-400" : ""}>
+                              {submission.isExported
+                                ? "Already Downloaded"
+                                : hasStoredFile(submission)
+                                  ? "Download"
+                                  : "No File Attached"}
                             </span>
                           </DropdownMenuItem>
                         )}
@@ -756,7 +778,11 @@ export function AdminTable({
                 <div className="flex items-center space-x-1">
                   <FileDown className={`h-3 w-3 ${submission.isExported ? 'text-green-600' : 'text-gray-400'}`} />
                   <span className="text-xs text-gray-600">
-                    {submission.isExported ? 'Downloaded' : 'Available'}
+                    {submission.isExported
+                      ? 'Downloaded'
+                      : hasStoredFile(submission)
+                        ? 'Available'
+                        : 'No file'}
                   </span>
                 </div>
                 {submission.exportLink && (
@@ -794,14 +820,18 @@ export function AdminTable({
                 )}
                 <button
                   onClick={() => handleDownloadClick(submission)}
-                  disabled={submission.isExported}
+                  disabled={submission.isExported || !hasStoredFile(submission)}
                   className={`flex-1 text-sm py-2 px-3 rounded-md transition-colors ${
-                    submission.isExported 
+                    submission.isExported || !hasStoredFile(submission)
                       ? "bg-gray-400 cursor-not-allowed text-white" 
                       : "bg-orange-600 hover:bg-orange-700 text-white"
                   }`}
                 >
-                  {submission.isExported ? "Already Downloaded" : "Download"}
+                  {submission.isExported
+                    ? "Already Downloaded"
+                    : hasStoredFile(submission)
+                      ? "Download"
+                      : "No File"}
                 </button>
               {SHOW_FOLDER_DOWNLOAD && !submission.isExported && (
                 <button
@@ -906,7 +936,7 @@ export function AdminTable({
           }
         }}
         title="Confirm Storage Deletion"
-        description={`The file for ${selectedSubmission?.name}'s submission has been downloaded to your computer.\n\nDo you want to remove it from Firebase Storage to save costs?\n\n✅ File downloaded to your computer\n🗑️ Remove from cloud storage (saves money)\n\nWARNING: Once deleted from storage, the file cannot be downloaded again from the admin panel.`}
+        description={`The file for ${selectedSubmission?.name}'s submission has been downloaded to your computer.\n\nDo you want to remove it from cloud storage to save costs?\n\nFile downloaded to your computer\nRemove from cloud storage (saves money)\n\nWARNING: Once deleted from storage, the file cannot be downloaded again from the admin panel.`}
         confirmText="Remove from Storage"
         cancelText="Keep in Storage"
         onConfirm={handleDownloadConfirm}

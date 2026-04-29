@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { User } from "firebase/auth";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { LoginForm } from "@/components/admin/LoginForm";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { SubmissionCard } from "@/components/admin/SubmissionCard";
@@ -11,9 +9,9 @@ import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
 import {
   deleteSubmission,
   onAuthStateChange,
-} from "@/services/firebase";
-import { db } from "@/lib/firebase";
-import { Student } from "@/types";
+  subscribeToSubmissions,
+} from "@/services/submissions";
+import { AdminUser, Student } from "@/types";
 import { toast } from "sonner";
 
 interface DuplicateGroup {
@@ -42,7 +40,7 @@ function formatDate(date: Date): string {
 }
 
 export default function DuplicateSubmissionsPage() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AdminUser | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [submissions, setSubmissions] = useState<Student[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -72,33 +70,9 @@ export default function DuplicateSubmissionsPage() {
       return;
     }
 
-    const submissionsQuery = query(
-      collection(db, "submissions"),
-      orderBy("submittedAt", "desc")
-    );
-
-    const unsubscribe = onSnapshot(
-      submissionsQuery,
-      (snapshot) => {
-        const realtimeSubmissions = snapshot.docs.map((submissionDoc) => {
-          const data = submissionDoc.data();
-          return {
-            ...data,
-            id: submissionDoc.id,
-            submittedAt: data.submittedAt?.toDate?.() ?? new Date(),
-            updatedAt: data.updatedAt?.toDate?.(),
-            exportedAt: data.exportedAt?.toDate?.(),
-            exportLink: data.exportLink || undefined,
-          } as Student;
-        });
-
-        setSubmissions(realtimeSubmissions);
-      },
-      (error) => {
-        console.error("Realtime submissions listener error:", error);
-        toast.error("Failed to sync submissions in real time");
-      }
-    );
+    const unsubscribe = subscribeToSubmissions((nextSubmissions) => {
+      setSubmissions(nextSubmissions);
+    });
 
     return () => unsubscribe();
   }, [user]);
@@ -276,12 +250,12 @@ export default function DuplicateSubmissionsPage() {
     setSelectedSubmission(null);
   };
 
-  const handleLoginSuccess = (nextUser: User) => {
+  const handleLoginSuccess = (nextUser: AdminUser) => {
     setUser(nextUser);
   };
 
   const handleSubmissionUpdate = () => {
-    // Realtime listener handles updates.
+    // The local listener handles updates.
   };
 
   const handleDeleteClick = (submission: Student) => {

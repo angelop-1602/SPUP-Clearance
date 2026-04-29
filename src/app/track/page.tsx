@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { TrackingForm } from '@/components/tracking/TrackingForm';
 import { SubmissionStatus } from '@/components/tracking/SubmissionStatus';
 import { Navigation } from '@/components/ui/Navigation';
-import { getSubmissionById } from '@/services/firebase';
+import { getSubmissionById } from '@/services/submissions';
 import { Student } from '@/types';
 
 export default function TrackPage() {

@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import React, { useEffect, useState } from "react";
 import { Navigation } from "@/components/ui/Navigation";
-import { db } from "@/lib/firebase";
-import { Student } from "@/types";
+import { useDebounce } from "@/hooks/useDebounce";
+import { searchCoordinatorSubmissions } from "@/services/submissions";
+import { CoordinatorSubmission } from "@/types";
 
 function normalizeValue(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
@@ -22,61 +22,45 @@ function formatDate(date: Date): string {
 
 export default function CoordinatorsPage() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [submissions, setSubmissions] = useState<Student[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const debouncedSearchTerm = useDebounce(searchTerm, 400);
+  const [matchingSubmissions, setMatchingSubmissions] = useState<CoordinatorSubmission[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    const submissionsQuery = query(
-      collection(db, "submissions"),
-      orderBy("submittedAt", "desc")
-    );
+    const normalizedSearchTerm = normalizeValue(debouncedSearchTerm);
 
-    const unsubscribe = onSnapshot(
-      submissionsQuery,
-      (snapshot) => {
-        const realtimeSubmissions = snapshot.docs.map((submissionDoc) => {
-          const data = submissionDoc.data();
-          return {
-            ...data,
-            id: submissionDoc.id,
-            submittedAt: data.submittedAt?.toDate?.() ?? new Date(),
-            updatedAt: data.updatedAt?.toDate?.(),
-            exportedAt: data.exportedAt?.toDate?.(),
-            exportLink: data.exportLink || undefined,
-          } as Student;
-        });
+    if (!normalizedSearchTerm) {
+      setMatchingSubmissions([]);
+      setLoadError("");
+      return;
+    }
 
-        setSubmissions(realtimeSubmissions);
+    let isDisposed = false;
+    setIsLoading(true);
+
+    searchCoordinatorSubmissions(normalizedSearchTerm)
+      .then((submissions) => {
+        if (isDisposed) return;
+        setMatchingSubmissions(submissions);
         setLoadError("");
-        setIsLoading(false);
-      },
-      (error) => {
-        console.error("Coordinator lookup listener error:", error);
+      })
+      .catch((error) => {
+        if (isDisposed) return;
+        console.error("Coordinator lookup error:", error);
+        setMatchingSubmissions([]);
         setLoadError("Failed to load submissions. Please refresh and try again.");
-        setIsLoading(false);
-      }
-    );
+      })
+      .finally(() => {
+        if (!isDisposed) setIsLoading(false);
+      });
 
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      isDisposed = true;
+    };
+  }, [debouncedSearchTerm]);
 
-  const normalizedSearchTerm = normalizeValue(searchTerm);
-  const hasSearch = normalizedSearchTerm.length > 0;
-
-  const matchingSubmissions = useMemo(() => {
-    if (!hasSearch) return [];
-
-    return submissions.filter((submission) => {
-      const normalizedStudentId = normalizeValue(submission.studentId || "");
-      const normalizedName = normalizeValue(submission.name || "");
-
-      return (
-        normalizedStudentId.includes(normalizedSearchTerm) ||
-        normalizedName.includes(normalizedSearchTerm)
-      );
-    });
-  }, [hasSearch, normalizedSearchTerm, submissions]);
+  const hasSearch = normalizeValue(searchTerm).length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -147,7 +131,7 @@ export default function CoordinatorsPage() {
                             Status
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Submitted At
+                            Submitted
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Submission ID
@@ -173,16 +157,16 @@ export default function CoordinatorsPage() {
                                     ? "bg-green-100 text-green-800"
                                     : "bg-yellow-100 text-yellow-800"
                                 }`}
-                              >
-                                {submission.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-700">
-                              {formatDate(submission.submittedAt)}
-                            </td>
-                            <td className="px-4 py-3 text-xs font-mono text-gray-700 break-all">
-                              {submission.id}
-                            </td>
+                            >
+                              {submission.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-700">
+                            {formatDate(submission.submittedAt)}
+                          </td>
+                          <td className="px-4 py-3 text-xs font-mono text-gray-700 break-all">
+                            {submission.id}
+                          </td>
                           </tr>
                         ))}
                       </tbody>
