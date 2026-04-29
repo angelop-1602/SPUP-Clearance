@@ -11,6 +11,6 @@ values ('AUTH_USER_UUID', 'admin@example.com')
 on conflict (user_id) do update set email = excluded.email;
 ```
 
-The app uses a private Storage bucket named `submission-files`. The SQL setup
-creates it if it does not exist, and the submission API also attempts to create
-it before uploading files.
+The app uses a private Storage bucket named `submission-files` with a 100 MB
+file-size limit. The SQL setup creates or updates it, and the submission API
+also attempts to create or update it before uploading files.

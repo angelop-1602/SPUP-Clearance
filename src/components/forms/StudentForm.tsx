@@ -5,6 +5,10 @@ import { StudentFormData, Level, ResearchType } from "@/types";
 import { MultiFileUpload } from "./MultiFileUpload";
 import { Label } from "@/components/ui/label";
 import { getDocumentInstructionsForLevel } from "@/constants/documentInstructions";
+import {
+  SUBMISSION_UPLOAD_LIMIT_BYTES,
+  SUBMISSION_UPLOAD_LIMIT_LABEL,
+} from "@/lib/uploads/constants";
 import { isNotApplicableResearchType } from "@/utils/researchType";
 import {
   Select,
@@ -22,6 +26,14 @@ interface StudentFormProps {
   fixedResearchType?: ResearchType;
   hideResearchType?: boolean;
   hideAcademicInformation?: boolean;
+}
+
+function getTotalFileSize(files: File[]) {
+  return files.reduce((total, file) => total + file.size, 0);
+}
+
+function getUploadLimitError() {
+  return `Selected files are too large. Upload up to ${SUBMISSION_UPLOAD_LIMIT_LABEL} total per submission.`;
 }
 
 export function StudentForm({
@@ -122,17 +134,25 @@ export function StudentForm({
   };
 
   const handleFilesChange = (files: File[]) => {
+    if (getTotalFileSize(files) > SUBMISSION_UPLOAD_LIMIT_BYTES) {
+      setUploadError(getUploadLimitError());
+      return;
+    }
+
     setFormData((prev) => ({
       ...prev,
       uploadedFiles: files,
     }));
 
-    if (files.length > 0) {
-      setUploadError("");
-    }
+    setUploadError("");
   };
 
   const validateForm = (): boolean => {
+    if (getTotalFileSize(formData.uploadedFiles) > SUBMISSION_UPLOAD_LIMIT_BYTES) {
+      setUploadError(getUploadLimitError());
+      return false;
+    }
+
     if (
       formData.researchType !== ("Capstone" as ResearchType) &&
       !isNotApplicableResearchType(formData.researchType) &&
@@ -588,6 +608,7 @@ export function StudentForm({
                 onFilesChange={handleFilesChange}
                 error={hasOptionalOnlyPhotoRequirement ? "" : uploadError}
                 isRequired={!hasOptionalOnlyPhotoRequirement}
+                maxTotalSizeLabel={SUBMISSION_UPLOAD_LIMIT_LABEL}
               />
             </div>
 

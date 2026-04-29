@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const uploadBodySizeLimit = "100mb";
+
 const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
@@ -8,6 +10,9 @@ const nextConfig: NextConfig = {
     unoptimized: true,
     domains: [],
     remotePatterns: [],
+  },
+  experimental: {
+    middlewareClientMaxBodySize: uploadBodySizeLimit,
   },
   trailingSlash: true,
 };

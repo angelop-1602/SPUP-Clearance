@@ -119,9 +119,12 @@ using (
   )
 );
 
-insert into storage.buckets (id, name, public)
-values ('submission-files', 'submission-files', false)
-on conflict (id) do update set public = false;
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('submission-files', 'submission-files', false, 104857600)
+on conflict (id) do update
+set
+  public = false,
+  file_size_limit = excluded.file_size_limit;
 
 do $$
 begin

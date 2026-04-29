@@ -7,6 +7,7 @@ interface MultiFileUploadProps {
   onFilesChange: (files: File[]) => void;
   error?: string;
   isRequired?: boolean;
+  maxTotalSizeLabel?: string;
 }
 
 export function MultiFileUpload({
@@ -14,6 +15,7 @@ export function MultiFileUpload({
   onFilesChange,
   error,
   isRequired = true,
+  maxTotalSizeLabel,
 }: MultiFileUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -115,6 +117,7 @@ export function MultiFileUpload({
           </p>
           <p className="text-xs text-gray-500">
             Multiple files supported. All file types are accepted.
+            {maxTotalSizeLabel ? ` Up to ${maxTotalSizeLabel} total.` : ""}
           </p>
         </div>
       </div>

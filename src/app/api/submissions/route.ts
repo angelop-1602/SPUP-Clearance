@@ -4,9 +4,18 @@ import JSZip from "jszip";
 import { SubmissionInsert } from "@/lib/submissions/records";
 import { SUBMISSION_FILES_BUCKET } from "@/lib/supabase/constants";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  SUBMISSION_UPLOAD_LIMIT_BYTES,
+  SUBMISSION_UPLOAD_LIMIT_LABEL,
+} from "@/lib/uploads/constants";
 import { StudentFormData } from "@/types";
 import { generateDocumentId } from "@/utils/documentId";
 import { isNotApplicableResearchType, normalizeResearchType } from "@/utils/researchType";
+
+const SUBMISSION_BUCKET_OPTIONS = {
+  public: false,
+  fileSizeLimit: SUBMISSION_UPLOAD_LIMIT_BYTES,
+} as const;
 
 function addDuplicateSuffix(fileName: string, sequence: number): string {
   const dotIndex = fileName.lastIndexOf(".");
@@ -49,11 +58,22 @@ async function ensureSubmissionBucket() {
   }
 
   const hasBucket = data.some((bucket) => bucket.id === SUBMISSION_FILES_BUCKET);
-  if (hasBucket) return;
+  if (hasBucket) {
+    const { error: updateError } = await supabase.storage.updateBucket(
+      SUBMISSION_FILES_BUCKET,
+      SUBMISSION_BUCKET_OPTIONS
+    );
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    return;
+  }
 
   const { error: createError } = await supabase.storage.createBucket(
     SUBMISSION_FILES_BUCKET,
-    { public: false }
+    SUBMISSION_BUCKET_OPTIONS
   );
 
   if (createError) {
@@ -85,6 +105,10 @@ async function buildArchive(files: File[]): Promise<{
     fileList,
     archive: await zip.generateAsync({ type: "uint8array" }),
   };
+}
+
+function getTotalFileSize(files: File[]) {
+  return files.reduce((total, file) => total + file.size, 0);
 }
 
 export async function POST(request: NextRequest) {
@@ -135,11 +159,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "At least one file is required." }, { status: 400 });
     }
 
+    if (getTotalFileSize(files) > SUBMISSION_UPLOAD_LIMIT_BYTES) {
+      return NextResponse.json(
+        { error: `Files exceed the ${SUBMISSION_UPLOAD_LIMIT_LABEL} upload limit.` },
+        { status: 400 }
+      );
+    }
+
     const documentId = generateDocumentId();
     const { fileList, archive } = await buildArchive(files);
     let zipPath: string | null = null;
 
     if (archive) {
+      if (archive.byteLength > SUBMISSION_UPLOAD_LIMIT_BYTES) {
+        return NextResponse.json(
+          { error: `The zipped submission exceeds the ${SUBMISSION_UPLOAD_LIMIT_LABEL} upload limit.` },
+          { status: 400 }
+        );
+      }
+
       await ensureSubmissionBucket();
 
       const sanitizedName = sanitizeStorageSegment(name);
