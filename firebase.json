@@ -12,6 +12,13 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "redirects": [
+      {
+        "source": "**",
+        "destination": "https://cprint-clearance.vercel.app/",
+        "type": 301
+      }
+    ],
     "headers": [
       {
         "source": "**/*.html",

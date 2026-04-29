@@ -24,7 +24,7 @@ export default function Home() {
             </h2>
             <p className="text-gray-600 mb-6">
               For undergraduate students submitting their clearance
-              requirements.
+              requirements for TOR and Diploma.
             </p>
             <Link
               href="/undergraduate"
@@ -36,10 +36,10 @@ export default function Home() {
 
           <div className="bg-white rounded-lg shadow-md border border-gray-100 p-6">
             <h2 className="text-2xl font-semibold text-gray-900 mb-3">
-              Graduate
+              Graduate School
             </h2>
             <p className="text-gray-600 mb-6">
-              For graduate students submitting dissertation, thesis, capstone,
+              For graduate school students submitting dissertation, thesis, capstone,
               or non-thesis clearance requirements.
             </p>
             <Link
