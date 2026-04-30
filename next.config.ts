@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const uploadBodySizeLimit = "100mb";
+const uploadBodySizeLimit = "50mb";
 
 const nextConfig: NextConfig = {
   eslint: {

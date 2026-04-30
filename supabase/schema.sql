@@ -120,7 +120,7 @@ using (
 );
 
 insert into storage.buckets (id, name, public, file_size_limit)
-values ('submission-files', 'submission-files', false, 104857600)
+values ('submission-files', 'submission-files', false, 52428800)
 on conflict (id) do update
 set
   public = false,
