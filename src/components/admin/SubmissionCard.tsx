@@ -7,17 +7,20 @@ import Image from "next/image";
 import { Student } from "@/types";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { getResearchTypeLabel, isNotApplicableResearchType } from "@/utils/researchType";
-import { downloadWithConfirmation } from "@/services/exportService";
+import { downloadSubmissionAsZipFile } from "@/services/exportService";
+import type { BulkExportProgress } from "@/services/exportService";
 import {
-  clearSubmissionExportLink,
   getSubmissionDownloadUrl,
   markSubmissionAsExported,
-  setSubmissionExportLink,
   setUndergradAllClear,
   updateSubmissionStatus,
   updateUndergradParticipantClearance,
 } from "@/services/submissions";
 import { getUndergradClearanceState } from "@/utils/undergradClearance";
+import {
+  getExportProgressDetail,
+  getExportProgressPercent,
+} from "@/utils/exportProgress";
 
 interface SubmissionCardProps {
   submission: Student;
@@ -81,11 +84,7 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isUpdatingClearance, setIsUpdatingClearance] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-
-  const [isEditingLink, setIsEditingLink] = useState(false);
-  const [linkInput, setLinkInput] = useState(submission.exportLink || "");
-  const [isSavingLink, setIsSavingLink] = useState(false);
-  const [currentExportLink, setCurrentExportLink] = useState(submission.exportLink || "");
+  const [downloadProgress, setDownloadProgress] = useState<BulkExportProgress | null>(null);
 
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [zipEntries, setZipEntries] = useState<{ path: string }[]>([]);
@@ -114,15 +113,22 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
   }, []);
 
   useEffect(() => {
-    setCurrentExportLink(submission.exportLink || "");
-    setLinkInput(submission.exportLink || "");
-  }, [submission.exportLink]);
-
-  useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (!isDownloading) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDownloading]);
 
   const formatDate = (date?: Date) => {
     if (!date) return "N/A";
@@ -340,7 +346,7 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
 
   const handleDownloadZip = async () => {
     if (submission.isExported) {
-      toast.info("This submission was already downloaded and removed from storage.");
+      toast.info("This submission was already downloaded.");
       return;
     }
 
@@ -350,24 +356,67 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
     }
 
     setIsDownloading(true);
+    setDownloadProgress({
+      stage: "preparing",
+      current: 0,
+      total: 1,
+      submission,
+      message: `Preparing ${submission.name}'s ZIP file.`,
+    });
+    const toastId = `download-${submission.id}`;
+    toast.loading(`Choose where to save ${submission.name}'s ZIP file...`, { id: toastId });
+
     try {
-      await downloadWithConfirmation(submission);
-      toast.success(`Download started for ${submission.name}'s submission. Check your Downloads folder.`);
+      await downloadSubmissionAsZipFile(submission, {
+        onProgress: (progress) => {
+          setDownloadProgress(progress);
+          toast.loading(progress.message, { id: toastId });
+        },
+      });
 
       const shouldDelete = window.confirm(
-        "File downloaded successfully.\n\nRemove this file from cloud storage to save costs?\n\nIf removed, it cannot be downloaded again from admin."
+        `${submission.name}'s ZIP file was saved locally.\n\nChoose OK to delete the cloud copy now, or Cancel to keep the cloud copy. The submission will be marked downloaded either way.`
       );
 
-      if (shouldDelete) {
-        await markSubmissionAsExported(submission.id, true);
-        toast.success("File removed from storage.");
-        onUpdate();
-      } else {
-        toast.info("File kept in storage.");
-      }
+      setDownloadProgress({
+        stage: "marking",
+        current: 1,
+        total: 1,
+        submission,
+        message: shouldDelete
+          ? `Deleting confirmed cloud files for ${submission.name}.`
+          : `Marking ${submission.name}'s download while keeping cloud files.`,
+      });
+      await markSubmissionAsExported(submission.id, shouldDelete);
+      toast.success(
+        shouldDelete
+          ? `Downloaded ${submission.name}'s submission and deleted its stored documents.`
+          : `Downloaded ${submission.name}'s submission. Stored documents were kept.`,
+        { id: toastId }
+      );
+      setDownloadProgress({
+        stage: "completed",
+        current: 1,
+        total: 1,
+        submission,
+        message: `Finished downloading ${submission.name}.`,
+      });
+      onUpdate();
     } catch (error) {
       console.error("Download error:", error);
-      toast.error("Failed to download file. Please try again.");
+      const message = error instanceof DOMException && error.name === "AbortError"
+        ? "Download cancelled. The submission was not marked downloaded."
+        : error instanceof Error
+          ? error.message
+          : "Failed to download file. Please try again.";
+      setDownloadProgress({
+        stage: "failed",
+        current: 0,
+        total: 1,
+        submission,
+        message,
+      });
+      toast.error(message, { id: toastId });
     } finally {
       setIsDownloading(false);
     }
@@ -404,6 +453,9 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
     }
   };
 
+  const downloadPercent = downloadProgress ? getExportProgressPercent(downloadProgress) : 0;
+  const downloadDetail = downloadProgress ? getExportProgressDetail(downloadProgress) : "";
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-screen overflow-y-auto">
@@ -425,8 +477,7 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
             <div className="flex space-x-2">
               {submission.isExported ? (
                 <div className="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-md">
-                  <span className="text-sm text-gray-600">File unavailable (already exported)</span>
-                  <button type="button" onClick={() => setIsEditingLink(true)} className="ml-2 text-gray-600 hover:text-gray-800">Edit Link</button>
+                  <span className="text-sm text-gray-600">Already downloaded</span>
                 </div>
               ) : hasStoredFile(submission) ? (
                 <button
@@ -434,7 +485,7 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
                   disabled={isDownloading}
                   className="bg-primary hover:bg-primary/80 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
                 >
-                  {isDownloading ? "Downloading..." : `Download ZIP (${submission.id}.zip)`}
+                  {isDownloading ? "Saving..." : "Save ZIP"}
                 </button>
               ) : (
                 <div className="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-md">
@@ -443,6 +494,46 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
               )}
             </div>
           </div>
+
+          {downloadProgress && (
+            <div
+              className={`mb-4 w-full rounded-md border p-3 ${
+                downloadProgress.stage === "failed"
+                  ? "border-red-200 bg-red-50"
+                  : isDownloading
+                    ? "border-orange-200 bg-orange-50"
+                    : "border-green-200 bg-green-50"
+              }`}
+              aria-live="polite"
+            >
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-medium text-gray-900">
+                  {downloadProgress.message}
+                </p>
+                <p className="text-xs font-medium text-gray-600">
+                  {downloadDetail} - {downloadPercent}%
+                </p>
+              </div>
+              <div
+                className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={downloadPercent}
+              >
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    downloadProgress.stage === "failed"
+                      ? "bg-red-600"
+                      : isDownloading
+                        ? "bg-orange-600"
+                        : "bg-green-600"
+                  }`}
+                  style={{ width: `${downloadPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-6 space-y-6">
@@ -566,7 +657,7 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
           <div className="space-y-3">
             <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">Submitted Files</h3>
             {submission.isExported ? (
-              <p className="text-sm text-gray-600">Files are no longer available in storage (already exported).</p>
+              <p className="text-sm text-gray-600">Files are not available in storage.</p>
             ) : !hasStoredFile(submission) ? (
               <p className="text-sm text-gray-600">No submitted files are attached to this submission.</p>
             ) : (
@@ -762,79 +853,6 @@ export function SubmissionCard({ submission, onClose, onUpdate }: SubmissionCard
             </div>
           )}
 
-          {isEditingLink && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-2 sm:p-4">
-              <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Set export link</h3>
-                <input
-                  type="url"
-                  value={linkInput}
-                  onChange={(event) => setLinkInput(event.target.value)}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-                />
-                <div className="flex justify-between gap-2">
-                  {currentExportLink && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await clearSubmissionExportLink(submission.id);
-                          setCurrentExportLink("");
-                          setLinkInput("");
-                          toast.success("Export link removed");
-                          onUpdate();
-                          setIsEditingLink(false);
-                        } catch {
-                          toast.error("Failed to remove export link");
-                        }
-                      }}
-                      className="px-4 py-2 border border-red-300 text-red-600 rounded-md text-sm font-medium hover:bg-red-50"
-                      disabled={isSavingLink}
-                    >
-                      Remove Link
-                    </button>
-                  )}
-
-                  <div className="flex justify-end gap-2 ml-auto">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingLink(false)}
-                      className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-                      disabled={isSavingLink}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!linkInput || !/^https?:\/\//i.test(linkInput)) {
-                          toast.error("Please enter a valid URL starting with http or https");
-                          return;
-                        }
-                        setIsSavingLink(true);
-                        try {
-                          await setSubmissionExportLink(submission.id, linkInput);
-                          setCurrentExportLink(linkInput);
-                          toast.success("Export link saved");
-                          setIsEditingLink(false);
-                          onUpdate();
-                        } catch {
-                          toast.error("Failed to save export link");
-                        } finally {
-                          setIsSavingLink(false);
-                        }
-                      }}
-                      className={`px-4 py-2 rounded-md text-sm font-medium text-white ${isSavingLink ? "bg-gray-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"}`}
-                      disabled={isSavingLink}
-                    >
-                      {isSavingLink ? "Saving..." : "Save Link"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

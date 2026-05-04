@@ -3,14 +3,18 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Student, FilterOptions } from '@/types';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { EllipsisVertical, Eye, Download, CheckCircle, Edit, ChevronLeft, ChevronRight, Link2, FileDown, Trash2 } from 'lucide-react';
+import { EllipsisVertical, Eye, Download, CheckCircle, Edit, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { downloadWithConfirmation, downloadSubmissionAsFolder } from '@/services/exportService';
+import {
+  bulkDownloadSubmissionsAsZipFiles,
+  downloadSubmissionAsZipFile,
+} from '@/services/exportService';
+import type { BulkExportProgress } from '@/services/exportService';
 import {
   deleteSubmission,
   markSubmissionAsExported,
@@ -18,7 +22,6 @@ import {
   updateSubmissionStatus,
 } from '@/services/submissions';
 import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
-import { DownloadConfirmationDialog } from '@/components/ui/DownloadConfirmationDialog';
 import { EditSubmissionDialog } from '@/components/admin/EditSubmissionDialog';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -27,30 +30,10 @@ import {
   isNotApplicableResearchType,
   matchesResearchTypeFilter,
 } from '@/utils/researchType';
-
-// Exported Flag Component
-function ExportedFlag({ isExported, exportedAt }: { isExported?: boolean; exportedAt?: Date }) {
-  if (!isExported) return null;
-  
-  const formatExportDate = (date: Date) => {
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    }).format(date);
-  };
-
-  return (
-    <div 
-      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 ml-2"
-      title={`Exported on ${exportedAt ? formatExportDate(exportedAt) : 'Unknown date'}`}
-    >
-      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-      </svg>
-    </div>
-  );
-}
+import {
+  getExportProgressDetail,
+  getExportProgressPercent,
+} from '@/utils/exportProgress';
 
 interface AdminTableProps {
   submissions: Student[];
@@ -63,10 +46,32 @@ interface AdminTableProps {
 type TabType = 'all' | 'pending' | 'cleared';
 
 const ITEMS_PER_PAGE = 10;
-const SHOW_FOLDER_DOWNLOAD = false;
 
 function hasStoredFile(submission: Student): boolean {
   return Boolean(submission.zipFile || submission.zipPath);
+}
+
+function canExportSubmission(submission: Student): boolean {
+  return submission.status === 'Cleared' && !submission.isExported && hasStoredFile(submission);
+}
+
+function markSubmissionClearedLocally(submission: Student): Student {
+  if (submission.level === 'undergrad') {
+    return {
+      ...submission,
+      status: 'Cleared' as const,
+      leaderCleared: true,
+      groupMembers: (submission.groupMembers ?? []).map((member) => ({
+        ...member,
+        isCleared: true,
+      })),
+    };
+  }
+
+  return {
+    ...submission,
+    status: 'Cleared' as const,
+  };
 }
 
 export function AdminTable({ 
@@ -94,7 +99,6 @@ export function AdminTable({
   const [currentPage, setCurrentPage] = useState(1);
 
   // Dialog states
-  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState<Student | null>(null);
@@ -102,6 +106,10 @@ export function AdminTable({
   // Local state for optimistic updates
   const [localSubmissions, setLocalSubmissions] = useState<Student[]>(submissions);
   const [isDeleting, setIsDeleting] = useState<Set<string>>(new Set());
+  const [isBulkExporting, setIsBulkExporting] = useState(false);
+  const [isBulkClearing, setIsBulkClearing] = useState(false);
+  const [bulkExportProgress, setBulkExportProgress] = useState<BulkExportProgress | null>(null);
+  const [downloadingSubmissionIds, setDownloadingSubmissionIds] = useState<Set<string>>(new Set());
 
   const releaseInteractionLock = useCallback(() => {
     if (typeof document === 'undefined') return;
@@ -119,14 +127,26 @@ export function AdminTable({
   }, [submissions, isDeleting.size]);
 
   useEffect(() => {
-    if (downloadDialogOpen || editDialogOpen || deleteDialogOpen) return;
+    if (editDialogOpen || deleteDialogOpen) return;
 
     const timer = window.setTimeout(() => {
       releaseInteractionLock();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [downloadDialogOpen, editDialogOpen, deleteDialogOpen, releaseInteractionLock]);
+  }, [editDialogOpen, deleteDialogOpen, releaseInteractionLock]);
+
+  useEffect(() => {
+    if (!isBulkExporting && downloadingSubmissionIds.size === 0) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [downloadingSubmissionIds.size, isBulkExporting]);
   
   // Update filters when debounced search term changes
   useEffect(() => {
@@ -235,6 +255,17 @@ export function AdminTable({
       cleared: localSubmissions.filter(s => s.status === 'Cleared').length
     };
   }, [localSubmissions]);
+
+  const bulkExportCandidates = useMemo(
+    () => localSubmissions.filter(canExportSubmission),
+    [localSubmissions]
+  );
+  const bulkClearCandidates = useMemo(
+    () => filteredSubmissions.filter((submission) => submission.status !== 'Cleared'),
+    [filteredSubmissions]
+  );
+  const bulkExportPercent = bulkExportProgress ? getExportProgressPercent(bulkExportProgress) : 0;
+  const bulkExportDetail = bulkExportProgress ? getExportProgressDetail(bulkExportProgress) : '';
   
   // Truncate name function
   const truncateName = (name: string, maxLength: number = 25) => {
@@ -245,7 +276,7 @@ export function AdminTable({
   // Dialog handlers
   const handleDownloadClick = async (submission: Student) => {
     if (submission.isExported) {
-      toast.info('This submission was already downloaded and removed from storage.');
+      toast.info('This submission was already downloaded.');
       return;
     }
 
@@ -254,85 +285,258 @@ export function AdminTable({
       return;
     }
 
-    // Show loading toast
-    toast.loading(`Preparing download for ${submission.name}'s submission...`, { id: `download-${submission.id}` });
+    const toastId = `download-${submission.id}`;
+    setDownloadingSubmissionIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      nextIds.add(submission.id);
+      return nextIds;
+    });
+    setBulkExportProgress({
+      stage: 'preparing',
+      current: 0,
+      total: 1,
+      submission,
+      message: `Preparing ${submission.name}'s ZIP file.`,
+    });
+    toast.loading(`Choose where to save ${submission.name}'s ZIP file...`, { id: toastId });
 
     try {
-      // Step 1: Download the file in background
-      await downloadWithConfirmation(submission);
-      
-      // Step 2: Show success and ask for export link
-      toast.success(`Download completed! Check your Downloads folder.`, { id: `download-${submission.id}` });
-      
-      // Step 3: Show dialog for storage deletion with export link
-      setSelectedSubmission(submission);
-      setDownloadDialogOpen(true);
-      
-    } catch (error) {
-      console.error('Download error:', error);
-      toast.error('Failed to download file. Please try again.', { id: `download-${submission.id}` });
-    }
-  };
+      await downloadSubmissionAsZipFile(submission, {
+        onProgress: (progress) => {
+          setBulkExportProgress(progress);
+          toast.loading(progress.message, { id: toastId });
+        },
+      });
 
-  const handleDownloadFolderClick = async (submission: Student) => {
-    if (submission.isExported) {
-      toast.info('This submission was already downloaded and removed from storage.');
-      return;
-    }
+      const shouldDelete = window.confirm(
+        `${submission.name}'s ZIP file was saved locally.\n\nChoose OK to delete the cloud copy now, or Cancel to keep the cloud copy. The submission will be marked downloaded either way.`
+      );
 
-    if (!hasStoredFile(submission)) {
-      toast.info('No file is attached to this submission.');
-      return;
-    }
+      setBulkExportProgress({
+        stage: 'marking',
+        current: 1,
+        total: 1,
+        submission,
+        message: shouldDelete
+          ? `Deleting confirmed cloud files for ${submission.name}.`
+          : `Marking ${submission.name}'s download while keeping cloud files.`,
+      });
+      await markSubmissionAsExported(submission.id, shouldDelete);
 
-    toast.loading(`Preparing folder for ${submission.name}...`, { id: `download-folder-${submission.id}` });
-    try {
-      await downloadSubmissionAsFolder(submission);
-      toast.success('Files extracted to your chosen folder.', { id: `download-folder-${submission.id}` });
-    } catch (error: unknown) {
-      console.error('Folder download error:', error);
-      const message = error instanceof Error
-        ? error.message
-        : 'Failed to download as folder. Use standard Download instead.';
-      toast.error(message, { id: `download-folder-${submission.id}` });
-    }
-  };
-
-  const handleDownloadConfirm = async (exportLink: string) => {
-    if (!selectedSubmission) return;
-    
-    // Close dialog immediately for better UX
-    setDownloadDialogOpen(false);
-    
-    // Show processing toast
-    toast.loading(`Removing ${selectedSubmission.name}'s file from storage...`, { id: `storage-${selectedSubmission.id}` });
-    
-    try {
-      // Delete from storage and optionally save export link
-      await markSubmissionAsExported(selectedSubmission.id, true);
-      
-      // If export link is provided, save it to the submission
-      if (exportLink.trim()) {
-        const { setSubmissionExportLink } = await import('@/services/submissions');
-        await setSubmissionExportLink(selectedSubmission.id, exportLink.trim());
-      }
-      
-      // Update local state only after server operations complete successfully
-      setLocalSubmissions(prevSubmissions => 
-        prevSubmissions.map(s => 
-          s.id === selectedSubmission.id 
-            ? { ...s, isExported: true, exportedAt: new Date(), exportLink: exportLink.trim() || undefined }
+      setLocalSubmissions(prevSubmissions =>
+        prevSubmissions.map(s =>
+          s.id === submission.id
+            ? { ...s, isExported: true, exportedAt: new Date() }
             : s
         )
       );
-      
-      toast.success(`File removed from storage. Export link saved.`, { id: `storage-${selectedSubmission.id}` });
-      
+
+      toast.success(
+        shouldDelete
+          ? `Downloaded ${submission.name}'s submission and deleted its stored documents.`
+          : `Downloaded ${submission.name}'s submission. Stored documents were kept.`,
+        { id: toastId }
+      );
+      setBulkExportProgress({
+        stage: 'completed',
+        current: 1,
+        total: 1,
+        submission,
+        message: `Finished downloading ${submission.name}.`,
+      });
     } catch (error) {
-      console.error('Storage deletion error:', error);
-      toast.error('Failed to remove file from storage. Please try again later.', { id: `storage-${selectedSubmission.id}` });
+      console.error('Download error:', error);
+      const message = error instanceof DOMException && error.name === 'AbortError'
+        ? 'Download cancelled. The submission was not marked downloaded.'
+        : error instanceof Error
+          ? error.message
+          : 'Failed to download file. Please try again.';
+      setBulkExportProgress({
+        stage: 'failed',
+        current: 0,
+        total: 1,
+        submission,
+        message,
+      });
+      toast.error(message, { id: toastId });
     } finally {
-      setSelectedSubmission(null);
+      setDownloadingSubmissionIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(submission.id);
+        return nextIds;
+      });
+      releaseInteractionLock();
+    }
+  };
+
+  const handleBulkExportClick = async () => {
+    if (bulkExportCandidates.length === 0) {
+      toast.info('No cleared submissions are ready to download.');
+      return;
+    }
+
+    setIsBulkExporting(true);
+    setBulkExportProgress({
+      stage: 'preparing',
+      current: 0,
+      total: bulkExportCandidates.length,
+      message: `Preparing ${bulkExportCandidates.length} submissions for export.`,
+    });
+    const toastId = 'bulk-export';
+    toast.loading(`Preparing ${bulkExportCandidates.length} submissions...`, { id: toastId });
+
+    try {
+      const result = await bulkDownloadSubmissionsAsZipFiles(bulkExportCandidates, {
+        onProgress: (progress) => setBulkExportProgress(progress),
+      });
+
+      setBulkExportProgress({
+        stage: 'completed',
+        current: bulkExportCandidates.length,
+        total: bulkExportCandidates.length,
+        message: `Finished saving ${result.exported.length} ZIP files locally.`,
+      });
+
+      const shouldDelete = result.exported.length > 0 && window.confirm(
+        `${result.exported.length} submission ZIP files were saved locally.\n\nDelete their documents from cloud storage now?`
+      );
+
+      if (result.exported.length > 0) {
+        setBulkExportProgress({
+          stage: 'marking',
+          current: result.exported.length,
+          total: result.exported.length,
+          message: shouldDelete
+            ? 'Deleting confirmed cloud files and marking downloads.'
+            : 'Marking downloads while keeping cloud files.',
+        });
+      }
+
+      const markResults = await Promise.allSettled(
+        result.exported.map((submission) =>
+          markSubmissionAsExported(submission.id, shouldDelete)
+        )
+      );
+      const markedIds = new Set(
+        result.exported
+          .filter((_, index) => markResults[index].status === 'fulfilled')
+          .map((submission) => submission.id)
+      );
+      const markFailedCount = markResults.filter((item) => item.status === 'rejected').length;
+
+      if (markedIds.size > 0) {
+        setLocalSubmissions(prevSubmissions =>
+          prevSubmissions.map(s =>
+            markedIds.has(s.id)
+              ? { ...s, isExported: true, exportedAt: new Date() }
+              : s
+          )
+        );
+      }
+
+      if (result.failed.length > 0 || markFailedCount > 0) {
+        toast.warning(
+          `Downloaded ${markedIds.size} submissions. ${result.failed.length + markFailedCount} were not marked downloaded.`,
+          { id: toastId }
+        );
+        console.warn('Bulk export failures:', { exportFailures: result.failed, markResults });
+      } else {
+        toast.success(
+          shouldDelete
+            ? `Downloaded ${markedIds.size} submissions and deleted their stored documents.`
+            : `Downloaded ${markedIds.size} submissions. Stored documents were kept.`,
+          { id: toastId }
+        );
+      }
+
+      setBulkExportProgress({
+        stage: markFailedCount > 0 || result.failed.length > 0 ? 'failed' : 'completed',
+        current: bulkExportCandidates.length,
+        total: bulkExportCandidates.length,
+        message: markFailedCount > 0 || result.failed.length > 0
+          ? `Finished with ${result.failed.length + markFailedCount} issue(s).`
+          : `Finished downloading ${markedIds.size} submissions.`,
+      });
+    } catch (error: unknown) {
+      console.error('Bulk export error:', error);
+      const message = error instanceof Error
+        ? error.message
+        : 'Failed to export submissions.';
+      setBulkExportProgress({
+        stage: 'failed',
+        current: 0,
+        total: bulkExportCandidates.length,
+        message,
+      });
+      toast.error(message, { id: toastId });
+    } finally {
+      setIsBulkExporting(false);
+      releaseInteractionLock();
+    }
+  };
+
+  const handleBulkClearClick = async () => {
+    if (bulkClearCandidates.length === 0) {
+      toast.info('No submitted rows are ready to mark cleared.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Mark ${bulkClearCandidates.length} currently filtered submission(s) as cleared?\n\nFor undergraduate submissions, this will also mark the leader and all members as cleared.`
+    );
+
+    if (!confirmed) {
+      releaseInteractionLock();
+      return;
+    }
+
+    const toastId = 'bulk-clear';
+    setIsBulkClearing(true);
+    toast.loading(`Marking ${bulkClearCandidates.length} submissions as cleared...`, {
+      id: toastId,
+    });
+
+    try {
+      const clearResults = await Promise.allSettled(
+        bulkClearCandidates.map((submission) =>
+          submission.level === 'undergrad'
+            ? setUndergradAllClear(submission.id, true)
+            : updateSubmissionStatus(submission.id, 'Cleared')
+        )
+      );
+      const clearedIds = new Set(
+        bulkClearCandidates
+          .filter((_, index) => clearResults[index].status === 'fulfilled')
+          .map((submission) => submission.id)
+      );
+      const failedCount = clearResults.filter((result) => result.status === 'rejected').length;
+
+      if (clearedIds.size > 0) {
+        setLocalSubmissions((prevSubmissions) =>
+          prevSubmissions.map((submission) =>
+            clearedIds.has(submission.id)
+              ? markSubmissionClearedLocally(submission)
+              : submission
+          )
+        );
+      }
+
+      if (failedCount > 0) {
+        toast.warning(
+          `Marked ${clearedIds.size} submissions as cleared. ${failedCount} failed.`,
+          { id: toastId }
+        );
+        console.warn('Bulk clear failures:', clearResults);
+      } else {
+        toast.success(`Marked ${clearedIds.size} submissions as cleared.`, {
+          id: toastId,
+        });
+      }
+    } catch (error) {
+      console.error('Bulk clear error:', error);
+      toast.error('Failed to bulk clear submissions.', { id: toastId });
+    } finally {
+      setIsBulkClearing(false);
       releaseInteractionLock();
     }
   };
@@ -361,22 +565,7 @@ export function AdminTable({
               return existingSubmission;
             }
 
-            if (existingSubmission.level === 'undergrad') {
-              return {
-                ...existingSubmission,
-                status: 'Cleared' as const,
-                leaderCleared: true,
-                groupMembers: (existingSubmission.groupMembers ?? []).map((member) => ({
-                  ...member,
-                  isCleared: true,
-                })),
-              };
-            }
-
-            return {
-              ...existingSubmission,
-              status: 'Cleared' as const,
-            };
+            return markSubmissionClearedLocally(existingSubmission);
           })
         );
 
@@ -412,7 +601,7 @@ export function AdminTable({
     const submissionId = submissionToDelete.id;
     const submissionName = submissionToDelete.name;
     
-    // Match DownloadConfirmationDialog pattern - close dialog first, then process
+    // Close the dialog before the async deletion starts.
     setDeleteDialogOpen(false);
     
     // Mark as deleting to prevent state sync conflicts
@@ -512,11 +701,85 @@ export function AdminTable({
       
       {/* Filters */}
       <div className="p-6 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          {activeTab === 'all' && 'All Submissions'}
-          {activeTab === 'pending' && 'Pending Submissions'}
-          {activeTab === 'cleared' && 'Cleared Submissions'}
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">
+            {activeTab === 'all' && 'All Submissions'}
+            {activeTab === 'pending' && 'Pending Submissions'}
+            {activeTab === 'cleared' && 'Cleared Submissions'}
+          </h2>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={handleBulkClearClick}
+              disabled={isBulkClearing || isBulkExporting || bulkClearCandidates.length === 0}
+              className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors ${
+                isBulkClearing || isBulkExporting || bulkClearCandidates.length === 0
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-700'
+              }`}
+            >
+              <CheckCircle className="h-4 w-4" />
+              {isBulkClearing
+                ? 'Clearing...'
+                : `Bulk Clear (${bulkClearCandidates.length})`}
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkExportClick}
+              disabled={isBulkExporting || isBulkClearing || bulkExportCandidates.length === 0}
+              className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors ${
+                isBulkExporting || isBulkClearing || bulkExportCandidates.length === 0
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-orange-600 hover:bg-orange-700'
+              }`}
+            >
+              <Download className="h-4 w-4" />
+              {isBulkExporting
+                ? 'Exporting...'
+                : `Bulk Download ZIPs (${bulkExportCandidates.length})`}
+            </button>
+          </div>
+        </div>
+
+        {bulkExportProgress && (
+          <div
+            className={`mb-4 rounded-md border p-3 ${
+              bulkExportProgress.stage === 'failed'
+                ? 'border-red-200 bg-red-50'
+                : isBulkExporting
+                  ? 'border-orange-200 bg-orange-50'
+                  : 'border-green-200 bg-green-50'
+            }`}
+            aria-live="polite"
+          >
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-medium text-gray-900">
+                {bulkExportProgress.message}
+              </p>
+              <p className="text-xs font-medium text-gray-600">
+                {bulkExportDetail} - {bulkExportPercent}%
+              </p>
+            </div>
+            <div
+              className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={bulkExportPercent}
+            >
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  bulkExportProgress.stage === 'failed'
+                    ? 'bg-red-600'
+                    : isBulkExporting
+                      ? 'bg-orange-600'
+                      : 'bg-green-600'
+                }`}
+                style={{ width: `${bulkExportPercent}%` }}
+              />
+            </div>
+          </div>
+        )}
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -571,13 +834,6 @@ export function AdminTable({
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                File
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Link
-              </th>
-
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
@@ -586,7 +842,7 @@ export function AdminTable({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedSubmissions.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                   {activeTab === 'all' && 'No submissions found'}
                   {activeTab === 'pending' && 'No pending submissions'}
                   {activeTab === 'cleared' && 'No cleared submissions'}
@@ -639,37 +895,6 @@ export function AdminTable({
                     </div>
                   </td>
                   
-                  {/* File Indicator */}
-                  <td className="px-4 py-4 whitespace-nowrap text-center">
-                    {submission.isExported ? (
-                      <div className="flex items-center justify-center" title="File downloaded">
-                        <FileDown className="h-4 w-4 text-green-600" />
-                      </div>
-                    ) : hasStoredFile(submission) ? (
-                      <div className="flex items-center justify-center" title="File available">
-                        <FileDown className="h-4 w-4 text-gray-400" />
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center" title="No file attached">
-                        <span className="text-gray-400">-</span>
-                      </div>
-                    )}
-                  </td>
-                  
-                  {/* Link Indicator */}
-                  <td className="px-4 py-4 whitespace-nowrap text-center">
-                    {submission.exportLink ? (
-                      <div className="flex items-center justify-center" title="Export link attached">
-                        <Link2 className="h-4 w-4 text-blue-600" />
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center">
-                        <span className="text-gray-400">—</span>
-                      </div>
-                    )}
-                  </td>
-                  
-   
                   
                   {/* Actions */}
                   <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
@@ -697,37 +922,22 @@ export function AdminTable({
                             <span>{submission.level === 'undergrad' ? 'All Clear' : 'Mark as Cleared'}</span>
                           </DropdownMenuItem>
                         )}
-                        {submission.isExported && submission.exportLink ? (
-                          <DropdownMenuItem asChild>
-                            <a href={submission.exportLink} target="_blank" rel="noopener noreferrer" className="flex items-center">
-                              <Download className="h-4 w-4 mr-2" />
-                              <span>Open Export Link</span>
-                            </a>
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem 
-                            onClick={() => handleDownloadClick(submission)}
-                            disabled={submission.isExported || !hasStoredFile(submission)}
-                            className={submission.isExported || !hasStoredFile(submission) ? "opacity-50 cursor-not-allowed" : ""}
-                          >
-                            <Download className="h-4 w-4 mr-2" />
-                            <span className={submission.isExported || !hasStoredFile(submission) ? "text-gray-400" : ""}>
-                              {submission.isExported
+                        <DropdownMenuItem
+                          onClick={() => handleDownloadClick(submission)}
+                          disabled={submission.isExported || !hasStoredFile(submission) || downloadingSubmissionIds.has(submission.id)}
+                          className={submission.isExported || !hasStoredFile(submission) || downloadingSubmissionIds.has(submission.id) ? "opacity-50 cursor-not-allowed" : ""}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          <span className={submission.isExported || !hasStoredFile(submission) || downloadingSubmissionIds.has(submission.id) ? "text-gray-400" : ""}>
+                            {downloadingSubmissionIds.has(submission.id)
+                              ? "Saving..."
+                              : submission.isExported
                                 ? "Already Downloaded"
                                 : hasStoredFile(submission)
-                                  ? "Download"
+                                  ? "Save ZIP"
                                   : "No File Attached"}
-                            </span>
-                          </DropdownMenuItem>
-                        )}
-                        {SHOW_FOLDER_DOWNLOAD && !submission.isExported && (
-                          <DropdownMenuItem 
-                            onClick={() => handleDownloadFolderClick(submission)}
-                          >
-                            <Download className="h-4 w-4 mr-2" />
-                            <span>Download as Folder</span>
-                          </DropdownMenuItem>
-                        )}
+                          </span>
+                        </DropdownMenuItem>
                         <DropdownMenuItem 
                           onClick={() => handleDeleteClick(submission)}
                           className="text-red-600 focus:text-red-600 focus:bg-red-50"
@@ -759,7 +969,6 @@ export function AdminTable({
               </div>
               <div className="flex flex-col items-end space-y-1">
                 <StatusBadge status={submission.status} />
-                <ExportedFlag isExported={submission.isExported} exportedAt={submission.exportedAt} />
               </div>
             </div>
             
@@ -774,24 +983,6 @@ export function AdminTable({
               )}
               <p><span className="font-medium">Level:</span> {submission.level}</p>
               <p><span className="font-medium">Submitted:</span> {submission.submittedAt.toLocaleDateString()}</p>
-              <div className="flex items-center space-x-4 pt-1">
-                <div className="flex items-center space-x-1">
-                  <FileDown className={`h-3 w-3 ${submission.isExported ? 'text-green-600' : 'text-gray-400'}`} />
-                  <span className="text-xs text-gray-600">
-                    {submission.isExported
-                      ? 'Downloaded'
-                      : hasStoredFile(submission)
-                        ? 'Available'
-                        : 'No file'}
-                  </span>
-                </div>
-                {submission.exportLink && (
-                  <div className="flex items-center space-x-1">
-                    <Link2 className="h-3 w-3 text-blue-600" />
-                    <span className="text-xs text-gray-600">Link attached</span>
-                  </div>
-                )}
-              </div>
             </div>
             
             <div className="flex flex-col space-y-2">
@@ -820,27 +1011,21 @@ export function AdminTable({
                 )}
                 <button
                   onClick={() => handleDownloadClick(submission)}
-                  disabled={submission.isExported || !hasStoredFile(submission)}
+                  disabled={submission.isExported || !hasStoredFile(submission) || downloadingSubmissionIds.has(submission.id)}
                   className={`flex-1 text-sm py-2 px-3 rounded-md transition-colors ${
-                    submission.isExported || !hasStoredFile(submission)
+                    submission.isExported || !hasStoredFile(submission) || downloadingSubmissionIds.has(submission.id)
                       ? "bg-gray-400 cursor-not-allowed text-white" 
                       : "bg-orange-600 hover:bg-orange-700 text-white"
                   }`}
                 >
-                  {submission.isExported
-                    ? "Already Downloaded"
-                    : hasStoredFile(submission)
-                      ? "Download"
-                      : "No File"}
+                  {downloadingSubmissionIds.has(submission.id)
+                    ? "Saving..."
+                    : submission.isExported
+                      ? "Already Downloaded"
+                      : hasStoredFile(submission)
+                        ? "Save ZIP"
+                        : "No File"}
                 </button>
-              {SHOW_FOLDER_DOWNLOAD && !submission.isExported && (
-                <button
-                  onClick={() => handleDownloadFolderClick(submission)}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-sm py-2 px-3 rounded-md transition-colors"
-                >
-                  Download as Folder
-                </button>
-              )}
               </div>
               <button
                 onClick={() => handleDeleteClick(submission)}
@@ -924,24 +1109,6 @@ export function AdminTable({
           </div>
         </div>
       )}
-
-      {/* Confirmation Dialogs */}
-      <DownloadConfirmationDialog
-        isOpen={downloadDialogOpen}
-        onOpenChange={(open) => {
-          setDownloadDialogOpen(open);
-          if (!open) {
-            setSelectedSubmission(null); // Reset selected submission when dialog closes
-            releaseInteractionLock();
-          }
-        }}
-        title="Confirm Storage Deletion"
-        description={`The file for ${selectedSubmission?.name}'s submission has been downloaded to your computer.\n\nDo you want to remove it from cloud storage to save costs?\n\nFile downloaded to your computer\nRemove from cloud storage (saves money)\n\nWARNING: Once deleted from storage, the file cannot be downloaded again from the admin panel.`}
-        confirmText="Remove from Storage"
-        cancelText="Keep in Storage"
-        onConfirm={handleDownloadConfirm}
-        studentName={selectedSubmission?.name}
-      />
 
       {/* Clear confirmation dialog removed - now using direct processing */}
 

@@ -281,7 +281,7 @@ export async function setUndergradAllClear(
 }
 
 async function getAdminUserFromServer(): Promise<AdminUser | null> {
-  const response = await fetch("/api/admin/me", { cache: "no-store" });
+  const response = await fetch("/api/admin/me/", { cache: "no-store" });
   if (response.status === 401 || response.status === 403) {
     return null;
   }

@@ -20,11 +20,11 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg shadow-md border border-gray-100 p-6">
             <h2 className="text-2xl font-semibold text-gray-900 mb-3">
-              Undergraduate
+              Undergraduate Clearance
             </h2>
             <p className="text-gray-600 mb-6">
               For undergraduate students submitting their clearance
-              requirements for TOR and Diploma.
+              requirements for releasing their credentials.
             </p>
             <Link
               href="/undergraduate"
@@ -36,11 +36,10 @@ export default function Home() {
 
           <div className="bg-white rounded-lg shadow-md border border-gray-100 p-6">
             <h2 className="text-2xl font-semibold text-gray-900 mb-3">
-              Graduate School
+              Graduate School Clearance
             </h2>
             <p className="text-gray-600 mb-6">
-              For graduate school students submitting dissertation, thesis, capstone,
-              or non-thesis clearance requirements.
+ For graduate school students submitting their clearance requirements for the release of their credentials.
             </p>
             <Link
               href="/graduate"
