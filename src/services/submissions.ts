@@ -1,6 +1,8 @@
 "use client";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { SUBMISSION_FILES_BUCKET } from "@/lib/supabase/constants";
+import { buildSubmissionArchive } from "@/lib/uploads/archive";
 import {
   AdminUser,
   CoordinatorSubmission,
@@ -82,38 +84,72 @@ function toSubmissionPayload(formData: StudentFormData) {
   };
 }
 
-function appendLegacyDocumentFiles(formPayload: FormData, formData: StudentFormData) {
-  if (!formData.documents) return;
+function getSubmissionFiles(formData: StudentFormData): File[] {
+  if (formData.uploadedFiles.length > 0) {
+    return formData.uploadedFiles;
+  }
 
-  Object.values(formData.documents).forEach((file) => {
-    if (file) {
-      formPayload.append("files", file, file.name);
-    }
-  });
+  if (!formData.documents) return [];
+
+  return Object.values(formData.documents).filter(
+    (file): file is File => file instanceof File
+  );
+}
+
+type SubmissionUploadUrlResponse = {
+  documentId: string;
+  zipPath: string;
+  token: string;
+};
+
+async function uploadSubmissionArchive(name: string, files: File[]) {
+  const { fileList, archive } = await buildSubmissionArchive(files);
+
+  if (!archive) return null;
+
+  const upload = await readJsonResponse<SubmissionUploadUrlResponse>(
+    await fetch("/api/submissions/upload-url/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    })
+  );
+
+  const supabase = createSupabaseBrowserClient();
+  const { error } = await supabase.storage
+    .from(SUBMISSION_FILES_BUCKET)
+    .uploadToSignedUrl(upload.zipPath, upload.token, archive, {
+      contentType: "application/zip",
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    documentId: upload.documentId,
+    zipPath: upload.zipPath,
+    fileList,
+    archiveSize: archive.size,
+  };
 }
 
 export async function submitStudentClearance(
   formData: StudentFormData
 ): Promise<string> {
-  const formPayload = new FormData();
-  formPayload.append("payload", JSON.stringify(toSubmissionPayload(formData)));
+  const submissionPayload = toSubmissionPayload(formData);
+  const upload = await uploadSubmissionArchive(formData.name, getSubmissionFiles(formData));
 
-  if (formData.uploadedFiles.length > 0) {
-    formData.uploadedFiles.forEach((file) => {
-      formPayload.append("files", file, file.name);
-    });
-  } else {
-    appendLegacyDocumentFiles(formPayload, formData);
-  }
-
-  const payload = await readJsonResponse<{ documentId: string }>(
-    await fetch("/api/submissions", {
+  const responsePayload = await readJsonResponse<{ documentId: string }>(
+    await fetch("/api/submissions/", {
       method: "POST",
-      body: formPayload,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: submissionPayload, upload }),
     })
   );
 
-  return payload.documentId;
+  return responsePayload.documentId;
 }
 
 export async function getSubmissionById(

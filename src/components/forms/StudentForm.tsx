@@ -6,8 +6,8 @@ import { MultiFileUpload } from "./MultiFileUpload";
 import { Label } from "@/components/ui/label";
 import { getDocumentInstructionsForLevel } from "@/constants/documentInstructions";
 import {
-  SUBMISSION_UPLOAD_LIMIT_BYTES,
   SUBMISSION_UPLOAD_LIMIT_LABEL,
+  exceedsSubmissionUploadLimit,
 } from "@/lib/uploads/constants";
 import { isNotApplicableResearchType } from "@/utils/researchType";
 import {
@@ -33,7 +33,9 @@ function getTotalFileSize(files: File[]) {
 }
 
 function getUploadLimitError() {
-  return `Selected files are too large. Upload up to ${SUBMISSION_UPLOAD_LIMIT_LABEL} total per submission.`;
+  return SUBMISSION_UPLOAD_LIMIT_LABEL
+    ? `Selected files are too large. Upload up to ${SUBMISSION_UPLOAD_LIMIT_LABEL} total per submission.`
+    : "";
 }
 
 export function StudentForm({
@@ -134,7 +136,7 @@ export function StudentForm({
   };
 
   const handleFilesChange = (files: File[]) => {
-    if (getTotalFileSize(files) > SUBMISSION_UPLOAD_LIMIT_BYTES) {
+    if (exceedsSubmissionUploadLimit(getTotalFileSize(files))) {
       setUploadError(getUploadLimitError());
       return;
     }
@@ -148,7 +150,7 @@ export function StudentForm({
   };
 
   const validateForm = (): boolean => {
-    if (getTotalFileSize(formData.uploadedFiles) > SUBMISSION_UPLOAD_LIMIT_BYTES) {
+    if (exceedsSubmissionUploadLimit(getTotalFileSize(formData.uploadedFiles))) {
       setUploadError(getUploadLimitError());
       return false;
     }
@@ -608,7 +610,7 @@ export function StudentForm({
                 onFilesChange={handleFilesChange}
                 error={hasOptionalOnlyPhotoRequirement ? "" : uploadError}
                 isRequired={!hasOptionalOnlyPhotoRequirement}
-                maxTotalSizeLabel={SUBMISSION_UPLOAD_LIMIT_LABEL}
+                maxTotalSizeLabel={SUBMISSION_UPLOAD_LIMIT_LABEL ?? undefined}
               />
             </div>
 

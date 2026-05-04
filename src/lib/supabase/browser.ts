@@ -12,6 +12,10 @@ export function createSupabaseBrowserClient() {
   }
 
   const { supabaseUrl, supabasePublishableKey } = getSupabasePublicEnv();
-  browserClient = createBrowserClient(supabaseUrl, supabasePublishableKey);
+  browserClient = createBrowserClient(supabaseUrl, supabasePublishableKey, {
+    storage: {
+      useNewHostname: true,
+    },
+  });
   return browserClient;
 }
