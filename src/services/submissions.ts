@@ -108,7 +108,7 @@ async function uploadSubmissionArchive(name: string, files: File[]) {
   if (!archive) return null;
 
   const upload = await readJsonResponse<SubmissionUploadUrlResponse>(
-    await fetch("/api/submissions/upload-url/", {
+    await fetch("/api/submissions/upload-url", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -142,7 +142,7 @@ export async function submitStudentClearance(
   const upload = await uploadSubmissionArchive(formData.name, getSubmissionFiles(formData));
 
   const responsePayload = await readJsonResponse<{ documentId: string }>(
-    await fetch("/api/submissions/", {
+    await fetch("/api/submissions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ payload: submissionPayload, upload }),
@@ -317,7 +317,7 @@ export async function setUndergradAllClear(
 }
 
 async function getAdminUserFromServer(): Promise<AdminUser | null> {
-  const response = await fetch("/api/admin/me/", { cache: "no-store" });
+  const response = await fetch("/api/admin/me", { cache: "no-store" });
   if (response.status === 401 || response.status === 403) {
     return null;
   }
